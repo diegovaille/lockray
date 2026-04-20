@@ -1,8 +1,9 @@
 # LockRay — Design Specification
 
-**Status:** Draft
+**Status:** Draft (rev 2 — narrowed v1 scope, added threat model, signal availability, network behavior, Action permissions, structured evidence)
 **Date:** 2026-04-20
 **Codename history:** brainstormed as `depguard`; renamed to **LockRay** (X-ray metaphor — see inside every dependency update)
+**Guiding principle:** *Explainability over cleverness.* The tight evidence loop is the heart of the product. If a reviewer can read a LockRay finding and immediately see "this update added a postinstall script that reads env vars and sends data to a new host," the tool has done its job — with no ML, dashboards, or score gymnastics required.
 
 ---
 
@@ -15,36 +16,52 @@ Existing tools each cover part of the problem:
 - **Snyk / GitHub Dependency Review** — CVE scanning only
 - **Socket.dev** — closed-source, hosted-only; no open, auditable alternative
 
-**Gap:** No open-source tool combines version-to-version behavioral diff analysis, maintainer/trust signals, and CVE data into a single risk score that can block PRs.
+**Gap:** No open-source tool combines version-to-version behavioral diff analysis, maintainer/trust signals, and CVE data into a single, reviewer-legible risk verdict that can block PRs.
 
-**Positioning:** *"LockRay tells you if a dependency update is suspicious."* Not a replacement for Dependabot or Snyk — a complement that reviews what they deliver.
+**Positioning:** *"Dependabot tells you what changed; LockRay tells you whether the change behaves suspiciously."* Complement, not replacement.
 
 ---
 
-## 2. Product Scope (v1)
+## 2. Product Scope
 
-**LockRay** is an open-source CLI + GitHub Action that analyzes dependency-update PRs and produces a risk score (0–100) with a blocking verdict (safe / review / block).
+LockRay is released in stages. Each stage has a tight, demonstrable deliverable.
 
-**In scope:**
-- Ecosystems: **npm** and **PyPI**
-- Runtime: **Node.js / TypeScript**, distributed via npm
-- Distribution: **CLI** (`npx @lockray/cli`) + **GitHub Action** (thin wrapper around CLI)
-- No backend, no hosted service
+### v0.1 — Demo-ready spine (npm, metadata-only)
+- Ecosystems: **npm** only (`package-lock.json`, `pnpm-lock.yaml`)
+- Detections: install-script diff, source/registry change, integrity mismatch, OSV CVE lookup
+- No AST analysis yet; no transitive escalation yet; no trust analyzer yet
+- Output: JSON + pretty CLI
+- Small curated fixture set (~20 malicious + ~20 clean npm packages) used for regression from M2 onward
 
-**Explicitly out of scope for v1:**
-- Yarn Berry (v2+) lockfiles
-- `Pipfile.lock` (pipenv)
-- `setup.py`-only Python projects
+### v0.2 — GitHub Action wrapper
+- Thin Action around the v0.1 CLI
+- PR comment with findings summary, status check, report artifact upload
+- Explicit permission model (see §18)
+
+### v1.0 — Full npm MVP
+- AST-based behavioral diff (new network, new subprocess, new credential access, obfuscation)
+- Trust analyzer restricted to **deterministic signals** at first (maintainer change, archived/deleted upstream repo)
+- Transitive hybrid analysis (cheap screen + escalation) with caching
+- Configurable scoring (§9), configurable suppressions with expiry (§11)
+- Benchmark harness expanded toward top-1000 popular packages
+
+### v1.1 and beyond (planned, explicitly not v1.0)
+- **Ecosystems**: `yarn.lock` v1, PyPI (`poetry.lock`, `uv.lock`, pinned `requirements.txt`)
+- **Additional trust signals**: 2FA status, publish-velocity anomaly, typosquat heuristic, wheel/sdist mismatch (PyPI)
+- **Provenance**: Sigstore attestation as positive trust signal
+- **Private registries**: `.npmrc` / `pip.conf` with auth
+- **Hosted App / dashboards / auto-merge**: explicitly out of scope; revisit only after v1.0 adoption
+
+### Explicitly out of scope (any version)
 - ML-based classification
-- Sandbox detonation
-- Hosted GitHub App / org dashboards
-- Auto-merge policies
+- Sandbox detonation / runtime execution of packages
+- Replacing Dependabot or Snyk
 
 ---
 
 ## 3. Architecture
 
-Plugin-based analyzers sharing a common scoring and reporting engine. One CLI, one scoring model, multiple analyzers.
+Plugin-based analyzers sharing a common scoring and reporting engine. One CLI, one scoring model, multiple analyzers — even though only one analyzer (npm) ships in v1.0.
 
 ```
 @lockray/cli  (TypeScript, Node.js)
@@ -53,23 +70,19 @@ Plugin-based analyzers sharing a common scoring and reporting engine. One CLI, o
 │   ├── scoring               (findings → risk score & verdict)
 │   ├── reporting             (CLI output, PR comment markdown, JSON)
 │   ├── cache                 (by artifact identity: ecosystem+name+version+hash)
-│   └── config                (.lockray.yml resolution)
-├── @lockray/analyzer-npm
-│   ├── lockfile-parser       (package-lock, yarn.lock v1, pnpm-lock)
+│   ├── config                (.lockray.yml resolution)
+│   ├── http                  (shared rate-limit-aware client; see §17)
+│   └── suppressions          (expiring baseline; see §11)
+├── @lockray/analyzer-npm     (ships in v1.0)
+│   ├── lockfile-parser       (package-lock.json, pnpm-lock.yaml)
 │   ├── artifact-fetcher      (pacote)
 │   ├── diff-analyzer         (AST via @babel/parser + heuristics)
-│   ├── trust-analyzer        (npm registry + GitHub API signals)
+│   ├── trust-analyzer        (deterministic signals in v1.0; more in v1.1)
 │   └── cve-analyzer          (OSV.dev lookup)
-└── @lockray/analyzer-pypi
-    ├── lockfile-parser       (poetry.lock, uv.lock, pinned requirements.txt)
-    ├── artifact-fetcher      (PyPI JSON API + wheel/sdist download)
-    ├── diff-analyzer         (AST via tree-sitter-python WASM build;
-    │                          fallback: string/regex heuristics on unparseable files)
-    ├── trust-analyzer        (PyPI JSON API + GitHub API signals)
-    └── cve-analyzer          (OSV.dev lookup)
+└── @lockray/analyzer-pypi    (planned v1.1; interface reserved, not implemented)
 
 @lockray/action  (GitHub Action wrapper)
-└── invokes CLI, posts PR comment, sets status check
+└── invokes CLI, posts PR comment, sets status check, uploads report artifact
 ```
 
 **Common analyzer interface:**
@@ -83,6 +96,24 @@ interface Analyzer {
 }
 ```
 
+**Structured evidence** (replaces free-form `string[]` — a security tool's findings must be machine-parseable):
+
+```ts
+interface Evidence {
+  kind: "code-snippet" | "metadata" | "registry" | "advisory" | "repo" | "heuristic";
+  filePath?: string;             // package-relative path if code
+  oldSnippet?: string;           // ≤ 200 chars; longer truncated with "…"
+  newSnippet?: string;
+  metadataField?: string;        // e.g. "scripts.postinstall"
+  oldValue?: string;
+  newValue?: string;
+  registryUrl?: string;
+  advisoryId?: string;           // OSV / GHSA / CVE
+  confidenceReason?: string;     // e.g. "AST-verified call to `child_process.exec`"
+  remediationHint?: string;      // e.g. "Pin to 4.17.20 or audit postinstall script"
+}
+```
+
 **Normalized finding type:**
 
 ```ts
@@ -93,7 +124,7 @@ interface Finding {
   title: string;             // human-readable summary
   severity: Severity;
   confidence: number;        // 0.0–1.0
-  evidence?: string[];       // file paths, code snippets, metadata diffs
+  evidence: Evidence[];      // required — at least one item
   ecosystem: "npm" | "pypi";
   packageName: string;
   packageVersion: string;
@@ -103,53 +134,50 @@ interface Finding {
 }
 ```
 
-Analyzers share severity, evidence, scoring, and verdict models — but **never share raw rules**, because the danger surface differs between JavaScript (install hooks, obfuscated JS, added network calls) and Python (build backends, import-time side effects, wheel/sdist divergence).
+Analyzers share severity, evidence, scoring, and verdict models — but **never share raw rules**, because the danger surface differs between ecosystems (JS install hooks and obfuscation vs Python build backends and import-time side effects).
 
 ---
 
 ## 4. Input Sources
 
-| Ecosystem | Fully supported | Partially supported | Not yet supported |
-|-----------|-----------------|---------------------|-------------------|
-| **npm**   | `package-lock.json` (npm ≥ v7), `pnpm-lock.yaml`, `yarn.lock` v1 | — | Yarn Berry v2+ |
-| **PyPI**  | `poetry.lock`, `uv.lock` | `requirements.txt` (pinned with `==`) | `Pipfile.lock`, `setup.py`-only, unpinned `requirements.txt` |
+| Ecosystem | v1.0 — fully supported | v1.0 — partial | Planned v1.1 | Not yet supported |
+|-----------|------------------------|----------------|--------------|-------------------|
+| **npm**   | `package-lock.json` (npm ≥ v7), `pnpm-lock.yaml` | — | `yarn.lock` v1 | Yarn Berry v2+ |
+| **PyPI**  | — | — | `poetry.lock`, `uv.lock`, pinned `requirements.txt` | `Pipfile.lock`, `setup.py`-only |
 
 **Parse outcome states:**
 - `fully-supported` — deep analysis available
 - `partially-supported` — direct-dep analysis only; warn about transitive-gap blind spots
 - `invalid` — file present but malformed; error with parse details
-- `unsupported` — file format present but not supported in v1; clear message ("Yarn Berry not yet supported; tracking issue #N")
+- `unsupported` — file format present but not supported in current version; clear message with issue link
 - `missing` — no lockfile present; error unless a supported partial input exists
 
 **Lockfile precedence (npm), when multiple are present:**
 ```
-pnpm-lock.yaml  >  package-lock.json  >  yarn.lock
+pnpm-lock.yaml  >  package-lock.json
+(yarn.lock ignored in v1.0; honored in v1.1)
 ```
-Multiple lockfiles in the same workspace triggers a warning by default and a hard error in `--strict` mode.
+Multiple supported lockfiles in the same workspace triggers a warning by default and a hard error in `--strict` mode.
 
 **Manifests parsed as first-class inputs** (required to derive `direct` consistently):
 - npm → `package.json` (including workspaces declaration)
-- PyPI (Poetry / uv) → `pyproject.toml`
-- PyPI (pip) → `requirements.txt`
 
 ---
 
 ## 5. Workspace / Project Abstraction
-
-Everything downstream operates on `ProjectInput`:
 
 ```ts
 interface ProjectInput {
   workspaceName: string;        // e.g. "root", "packages/api"
   rootPath: string;             // absolute path to workspace root
   ecosystem: "npm" | "pypi";
-  manifestPaths: string[];      // one or more manifests declaring direct deps
+  manifestPaths: string[];
   lockfilePath: string;
   parseOutcome: "fully-supported" | "partially-supported" | "invalid" | "unsupported";
 }
 ```
 
-Monorepos: each workspace is discovered and analyzed independently; results are reported per workspace.
+Monorepos: each workspace is discovered and analyzed independently; results reported per workspace.
 
 ---
 
@@ -186,9 +214,11 @@ interface DependencyChange {
 | Lockfile-only change (no manifest change) | Analyzed — catches transitive-only attacks |
 | New package added (`fromVersion: null`) | Artifact-level static checks + trust + CVE (see §7) |
 | Removed package (`toVersion: null`) | Reported for completeness, no deep analysis |
-| Integrity hash changed without version change | Flagged HIGH regardless of other signals (classic tampering indicator) |
-| Source / registry redirected | Flagged HIGH (dependency-confusion / takeover indicator) |
+| Integrity hash changed without version change | **Hard-fail via `INTEGRITY_MISMATCH`** (see §8) — forces score 100 |
+| Source / registry redirected | **Hard-fail via `NEW_DEPENDENCY_SOURCE`** — forces score 100 |
 | Package rename / alias | Flagged MEDIUM |
+
+(Integrity mismatch and source redirection were flagged HIGH in the rev-1 draft; they are promoted to hard-fail here because both indicate tampering or takeover rather than ordinary suspicious behavior.)
 
 ---
 
@@ -200,46 +230,41 @@ interface DependencyChange {
 
 Full analysis per change:
 - CVE lookup (OSV.dev)
-- Trust analyzer (publisher change, publish velocity, 2FA status, archived/deleted upstream repo, typosquat score)
-- Artifact fetch + diff:
-  - npm: `pacote` → extract tarball
-  - PyPI: PyPI JSON API → download wheel + sdist
+- Trust analyzer (deterministic signals in v1.0: maintainer change, archived/deleted upstream repo)
+- Artifact fetch + diff (npm via `pacote`)
 - Diff analyzer: AST-based pattern detection (new `eval`, `Function()`, `child_process`, `fetch`/`axios`/`http`, credential/env access, obfuscation)
-- Install-hook scan (`postinstall`, `preinstall`, `prepare` for npm; build backends and setup hooks for PyPI)
+- Install-hook scan (`postinstall`, `preinstall`, `prepare`)
 
 ### Tier 2 — Transitive dependency changes
 
 Cheap screen first (no tarball fetch, no AST):
 - CVE lookup
-- Publisher / maintainer change
-- Publish-velocity / release-cadence anomaly
+- Publisher / maintainer change (deterministic; available from npm registry)
 - Install/build script presence (fast metadata check)
-- Package-metadata anomalies (major size / file-count delta; wheel vs sdist mismatch for PyPI)
-- Integrity / provenance signal, where available
+- Package-metadata anomalies (major size / file-count delta)
+- Integrity / source change
 
 **Escalation triggers** — any of these fires → escalate to full analysis:
 - New install/build hook appears
 - Maintainer/publisher changed recently
 - Major file-count or package-size jump (configurable threshold)
 - Obfuscation-like strings detected in quick scan
-- Suspicious permission / shell / network patterns in top-level entry files
-- Newly published version with low maturity / odd timing
-- Known-malicious-package hit or high typosquat score
+- Known-malicious-package hit
 
 **Caps:**
-- `max-deep-transitive` (default: 10) — upper bound on transitives escalated per PR. Overflow is not silently dropped; instead surfaces a warning: *"N additional transitives flagged; consider manual review or raise max-deep-transitive."*
+- `max-deep-transitive` (default: 10). Overflow surfaces a warning: *"N additional transitives flagged beyond escalation cap; consider manual review or raise max-deep-transitive."* Never silently dropped.
 
 ### Added packages (`fromVersion: null`)
 
 A prior-version diff isn't possible, but analysis is **not** reduced to trust+CVE only. Runs:
 - Artifact-level static checks (install hooks, obfuscation, network/credential/subprocess patterns)
-- Trust signals
+- Trust signals (deterministic only in v1.0)
 - CVE lookup
-- Typosquat heuristic against a popularity-weighted package list
+- (v1.1) typosquat heuristic against a popularity-weighted package list
 
 ---
 
-## 8. Detection Rules (v1)
+## 8. Detection Rules (v1.0)
 
 ### Hard-fail codes
 
@@ -248,26 +273,25 @@ Force package score to 100, overriding the math:
 | Code | Trigger |
 |------|---------|
 | `MALICIOUS_INSTALL_SCRIPT` | Install hook contains confirmed exfil pattern (network call to non-registry host + credential/env read) |
-| `CREDENTIAL_EXFIL_PATTERN` | New code reads env vars / credential files AND makes outbound network call |
+| `CREDENTIAL_EXFIL_PATTERN` | New code reads env vars / credential files AND makes outbound network call in the same module |
 | `KNOWN_COMPROMISED_PACKAGE` | Matches OSV malicious-package advisory or curated threat-intel list |
-| `INTEGRITY_MISMATCH` | Lockfile hash changed without version change |
+| `INTEGRITY_MISMATCH` | Lockfile integrity hash changed without version change |
+| `NEW_DEPENDENCY_SOURCE` | Package resolved to different registry / URL than before |
 
-### High-signal rules (v1 MVP)
+### High-signal rules (v1.0 MVP)
 
 | Code | Severity | Confidence floor | Description |
 |------|----------|------------------|-------------|
-| `NEW_POSTINSTALL_SCRIPT` | CRITICAL | 0.90 | postinstall/preinstall added or modified |
-| `NEW_NETWORK_CALL` | HIGH | 0.80 | new `fetch`/`axios`/`http`/`net`/`urllib`/`requests` usage |
-| `NEW_CHILD_PROCESS` | HIGH | 0.85 | new `child_process`/`subprocess`/`os.system`/shell exec |
+| `NEW_POSTINSTALL_SCRIPT` | CRITICAL | 0.90 | postinstall/preinstall/prepare added or modified |
+| `NEW_NETWORK_CALL` | HIGH | 0.80 | new `fetch`/`axios`/`http`/`net`/`https` usage |
+| `NEW_CHILD_PROCESS` | HIGH | 0.85 | new `child_process`/shell exec |
 | `OBFUSCATED_CODE` | HIGH | 0.70 | entropy > 4.5 bits/char on string literals, packed JS, base64 blobs |
-| `NEW_CREDENTIAL_ACCESS` | HIGH | 0.75 | new `process.env`/`os.environ`/credential-file reads |
-| `NEW_DEPENDENCY_SOURCE` | HIGH | 0.90 | package resolved to a different registry/URL than before |
+| `NEW_CREDENTIAL_ACCESS` | HIGH | 0.75 | new `process.env`/credential-file reads |
 | `MAINTAINER_CHANGED` | MEDIUM | 0.95 | publisher delta vs prior version |
-| `PUBLISH_VELOCITY_ANOMALY` | MEDIUM | 0.60 | new version published within unusually short window |
 | `ARCHIVED_OR_DELETED_REPO` | MEDIUM | 0.95 | upstream repo archived, deleted, or 404 |
-| `WHEEL_SDIST_MISMATCH` | MEDIUM | 0.80 | PyPI: wheel and sdist diverge materially |
-| `TYPOSQUAT_SUSPICION` | MEDIUM | 0.60 | name distance < threshold from popular package |
 | `SIZE_DELTA_ANOMALY` | LOW | 0.70 | package size or file count jump beyond threshold |
+
+Rules deferred to v1.1 (require best-effort or rate-limited signals — see §16): `PUBLISH_VELOCITY_ANOMALY`, `TYPOSQUAT_SUSPICION`, `WHEEL_SDIST_MISMATCH`, `2FA_DISABLED`.
 
 ### Compound bonuses
 
@@ -283,7 +307,9 @@ Applied when co-occurring within the same package:
 
 ## 9. Scoring Model
 
-**Per-finding contribution:**
+> **Explainability primacy.** Verdict and evidence lead the UX. The 0–100 score is a **secondary sorting aid** — a reviewer looking at a LockRay report should reach for the evidence first and only use the score to prioritize which package to look at next. Treating a 64 as meaningfully different from a 58 is false precision; treating a 95 as meaningfully different from a 40 is not.
+
+### Per-finding contribution
 
 ```
 contribution = severity_weight × confidence × location_multiplier × diminishing_factor
@@ -307,7 +333,7 @@ contribution = severity_weight × confidence × location_multiplier × diminishi
 | Transitive (not escalated) | 0.6 |
 | Transitive (escalated and confirmed) | 1.0 |
 
-**Diminishing returns** — applied per finding `code` within the same package:
+**Diminishing returns** — per finding `code` within the same package:
 
 | Occurrence | Factor |
 |------------|--------|
@@ -324,18 +350,16 @@ contribution = severity_weight × confidence × location_multiplier × diminishi
 | 0.4–0.7 | Weak heuristic |
 | < 0.4   | Informational only |
 
-**Aggregation:**
+### Per-package aggregation
 
 ```
 package_score = min(100, sum(adjusted_contributions) + sum(compound_bonuses))
 
 if any finding.hardFail === true:
     package_score = 100
-
-pr_score = max(package_scores)
 ```
 
-**Verdict thresholds (configurable):**
+### Verdict thresholds (configurable)
 
 | Range | Verdict |
 |-------|---------|
@@ -343,9 +367,38 @@ pr_score = max(package_scores)
 | 30–59 | ⚠️ review — post comment, do not block |
 | 60–100 | ❌ block — fail status check when `fail-on-risk: true` |
 
+### PR-level aggregation
+
+A single rotten dep must still block the PR — but a PR with many medium-risk changes should feel different from a PR with one medium-risk change. The report emits all of:
+
+```ts
+interface PrReport {
+  prScore: number;                    // max(package_scores) — drives the block decision
+  flaggedPackageCount: number;        // packages with score ≥ review threshold
+  reviewCount: number;                // packages in the 30–59 band
+  blockCount: number;                 // packages ≥ 60
+  hardFailCount: number;              // packages with any hard-fail finding
+  riskDensity: number;                // flaggedPackageCount / totalChangedPackages
+  verdict: "safe" | "review" | "block";
+  topRisks: PackageReport[];          // top 3 by package_score
+  workspaces: WorkspaceReport[];
+}
+```
+
+`prScore` determines blocking; `flaggedPackageCount` / `reviewCount` / `riskDensity` give reviewers the "broad suspicious churn" signal that `max()` alone hides.
+
 ---
 
 ## 10. Output & UX
+
+### Guiding rule
+
+Every rendered output (CLI, PR comment, JSON) follows the same order:
+
+1. **Verdict** (safe / review / block) — up top, unambiguous
+2. **Why** — the specific findings driving the verdict, with structured evidence (file path, snippets, metadata diff)
+3. **Context** — flagged-package count, review count, risk density
+4. **Score** — last, as a sort aid
 
 ### CLI (default, pretty)
 
@@ -353,37 +406,39 @@ pr_score = max(package_scores)
 🔍 LockRay — Dependency Risk Report
 Base: origin/main (a1b2c3d)  Head: feature/deps (e4f5g6h)
 
+Verdict: ❌ BLOCK
+Reason: 1 package hit a hard-fail rule (MALICIOUS_INSTALL_SCRIPT)
+
 Workspace: root (npm)
-  Direct deps changed: 3    • Fully analyzed: 3
-  Transitive deps changed: 47 • Cheap-screened: 47 • Escalated: 2
+  3 direct deps changed • 47 transitive deps changed
+  Flagged: 3   (1 block, 2 review)   Risk density: 6%
 
 Top risks:
-  ❌ lodash 4.17.20 → 4.17.21    score 95  [direct]
-     - CRITICAL: new postinstall script (0.95)
-     - HIGH: obfuscated code in lib/utils.js (0.80)
-     - Compound bonus: postinstall + obfuscation (+25)
 
-  ⚠️ chalk 5.3.0 → 5.4.0         score 48  [direct]
-     - MEDIUM: maintainer changed (0.95)
-     - MEDIUM: publish velocity anomaly (0.60)
+  ❌ lodash 4.17.20 → 4.17.21    [direct]
+     └─ CRITICAL  NEW_POSTINSTALL_SCRIPT  (conf 0.95)
+        scripts.postinstall: (none) → "node ./fetch-config.js"
+        evidence: ./fetch-config.js contains fetch() to non-registry host + process.env read
+        hint: Pin to 4.17.20 until the new postinstall is audited.
 
-  ⚠️ kind-of 6.0.2 → 6.0.3       score 64  [transitive, escalated]
-     - HIGH: new network call (0.85)
+  ⚠️ chalk 5.3.0 → 5.4.0         [direct]
+     └─ MEDIUM    MAINTAINER_CHANGED  (conf 0.95)
+        publisher: sindresorhus → new-maintainer-2026 (first release by this account)
 
-PR verdict: ❌ BLOCK  (score 95, threshold 60)
+  ⚠️ kind-of 6.0.2 → 6.0.3       [transitive, escalated]
+     └─ HIGH      NEW_NETWORK_CALL  (conf 0.85)
+        lib/index.js:12 — added `require('https').get(...)` with runtime-built URL
+
+PR score: 100 (block threshold 60)
 ```
 
 ### JSON (`--format json`)
 
-Machine-readable, full finding list + metadata. Schema lives at `docs/schema/report.json`.
+Machine-readable; schema lives at `docs/schema/report.json`. Top-level shape matches `PrReport` from §9.
 
 ### GitHub Action PR comment
 
-Markdown version of the CLI output with collapsed `<details>` sections for non-top-risk packages. Always shows:
-- Top 3 risky packages
-- Count of flagged transitives
-- Verdict and threshold
-- Link to full report JSON (uploaded as workflow artifact)
+Markdown version of the CLI output with collapsed `<details>` sections for non-top-risk packages. Always shows: verdict, top 3 risks with structured evidence, flagged-package count, risk density, link to full report JSON (uploaded as workflow artifact). Never buries the verdict below package details.
 
 ### Status check
 
@@ -403,7 +458,7 @@ fail-on-risk: true
 risk-threshold: 60            # score at which PR is blocked
 
 transitive:
-  max-deep: 10                # max transitives escalated per PR
+  max-deep: 10
   escalation-triggers:
     size-delta-percent: 50
     file-count-delta: 100
@@ -415,20 +470,34 @@ scoring:
   hard-fail:                  # add project-specific hard-fail codes
     - CUSTOM_RULE_X
 
+network:                      # see §17
+  timeout-ms: 10000
+  max-retries: 2
+  offline-mode: false
+  degraded-mode-verdict: review    # safe | review | block
+
 ecosystems:
   npm:
     registry: https://registry.npmjs.org
-  pypi:
-    index: https://pypi.org/simple
 
-ignore:                       # suppress findings by code and/or package
+ignore:
   - code: TYPOSQUAT_SUSPICION
     package: my-internal-pkg
+    reason: "Internal package; similarity to lodash is coincidental."
+    expires: 2026-07-01       # required — no permanent ignores
+    versions: ">=1.0.0 <2.0.0"
+    finding-hash: null        # optional; if set, suppression is scoped to one specific finding fingerprint
 
 workspaces:
   include: ["packages/*"]
   exclude: ["packages/docs"]
 ```
+
+**Suppression rules:**
+- `reason` and `expires` are **required**. Suppressions without them are rejected at config-load with a clear error.
+- Maximum `expires` is 1 year from today; longer expiries are rejected.
+- Expired suppressions become warnings, not errors — PR is not blocked by the expiry itself, but the report surfaces *"suppression for X expired on <date>; review or renew"*.
+- A suppression scoped by `finding-hash` only suppresses that exact finding fingerprint (code + package + version + evidence digest), not every finding of that code.
 
 ---
 
@@ -452,38 +521,173 @@ cacheKey = sha256(ecosystem + "|" + name + "|" + version + "|" + tarballHash)
 Three tiers:
 
 1. **Unit tests** — each analyzer, parser, and scoring function isolated.
-2. **Integration tests** — real fixtures from public malicious-package corpora:
-   - `ossf/malicious-packages`
-   - `backstabber-knife-collection`
-   - Historical incidents: event-stream, ua-parser-js, node-ipc, Shai-Hulud samples
-3. **Regression benchmark** — curated "clean" top-1000 popular packages. CI fails if false-positive rate > 1% at the `review` threshold.
+2. **Small benchmark harness** — built early (M2 deliverable): ~20 known-malicious + ~20 popular-clean npm fixtures, committed to the repo. Runs in CI on every commit. Protects against "vibes + regexes" regressions.
+3. **Large regression benchmark** — built for v1.0 gate: curated top-1000 popular packages. Runs nightly, not per-commit. False-positive rate is a v1.0 release gate.
 
-**v1.0 release targets:**
-- ≥ 90% true-positive rate on known-malicious corpus
-- < 1% false-positive rate on top-1000 popular packages
+**Targets:**
+
+| Metric | v0.1 (demo) | v1.0 (release) |
+|--------|-------------|----------------|
+| True-positive rate on known-malicious corpus | ≥ 70% on small harness | ≥ 90% on expanded corpus |
+| False-positive rate at `review` threshold | ≤ 5% on small harness (aspirational) | ≤ 1% on top-1000 (aspirational; calibrated as rules mature) |
+
+The FP target is held as an **aspiration**, not a hard gate. Real-world dependencies add network calls, env reads, scripts, and minified bundles for legitimate reasons; the benchmark exists to keep the tool honest as rules change, not to claim scientific precision.
 
 ---
 
 ## 14. Milestones
 
-| M | Deliverable |
-|---|-------------|
-| M1 | Skeleton: CLI scaffold, Action stub, lockfile parsers, change detection (no analyzers yet) |
-| M2 | CVE baseline: OSV.dev integration, basic scoring, JSON output |
-| M3 | npm diff analyzer: tarball fetch, AST diff, MVP rules, hard-fail codes |
-| M4 | npm trust analyzer: registry + GitHub signals, maintainer/velocity checks |
-| M5 | PyPI analyzer: wheel/sdist fetch + parse, MVP rules, compound bonuses |
-| M6 | Hybrid + cache + config: transitive tiering, escalation, `.lockray.yml` |
-| M7 | Action polish: PR comment, status check, Marketplace listing |
-| **v1.0** | M1–M7 complete, test suite passing, docs site live |
+Reordered to ship a narrow end-to-end spine first. Each milestone is a demoable deliverable.
+
+| M | Tag | Deliverable |
+|---|-----|-------------|
+| M1 | — | Skeleton: CLI scaffold, lockfile parsers (`package-lock.json`, `pnpm-lock.yaml`), change detection → `DependencyChange[]` |
+| M2 | **v0.1** | End-to-end spine: OSV.dev CVE lookup, install-script diff, source/integrity hard-fails, JSON + pretty CLI, small fixture set (~20 malicious + ~20 clean) wired into CI |
+| M3 | **v0.2** | GitHub Action wrapper: PR comment, status check, report artifact upload, fork-PR permission model (§18) |
+| M4 | — | AST-based behavioral diff: `@babel/parser`, new-network / new-child-process / new-credential / obfuscation rules, compound bonuses |
+| M5 | — | Trust analyzer (deterministic signals only): maintainer change, archived/deleted upstream repo |
+| M6 | — | Transitive hybrid analysis: cheap screen + escalation, artifact-identity cache, `.lockray.yml` config with expiring suppressions |
+| M7 | **v1.0** | Expanded benchmark toward top-1000 popular packages, false-positive tuning pass, docs site live, Marketplace listing polished |
+| — | v1.1 | `yarn.lock` v1, PyPI analyzer, best-effort trust signals (2FA, publish velocity, typosquat, wheel/sdist mismatch) |
 
 ---
 
-## 15. Open Questions (deferred from v1)
+## 15. Threat Model
 
-These are acknowledged but explicitly out of scope for v1; tracked for future design work.
+Making the threat model explicit forces honesty about what LockRay catches and, more importantly, what it does not.
 
-- **Provenance / Sigstore integration** — when npm or PyPI artifacts ship signed attestations, how do we weight them as a positive trust signal?
-- **Private registries** — `.npmrc` / `pip.conf` with auth: how do we fetch and analyze? (v1 supports the public defaults only.)
-- **LockRay's own supply-chain hygiene** — this tool must be trustworthy itself. Pre-v1.0: pin all own deps, publish with provenance, enforce 2FA + OIDC on the org.
-- **Scanning the tool itself for exempt patterns** — we legitimately read env vars and make network calls; ensure analyzers don't false-positive on security tools when dogfooded.
+### In scope (LockRay aims to catch)
+
+| Attack | Primary detection |
+|--------|-------------------|
+| Compromised maintainer publishes a malicious release | Diff analyzer + hard-fail rules (postinstall, credential exfil) |
+| Malicious *new* dependency introduced in PR | Artifact-level static checks + CVE + (v1.1) typosquat |
+| Registry/source redirection (dependency confusion) | `NEW_DEPENDENCY_SOURCE` hard-fail |
+| Install-time exfiltration (postinstall script) | `NEW_POSTINSTALL_SCRIPT` + `MALICIOUS_INSTALL_SCRIPT` |
+| Artifact tampering (same version, different hash) | `INTEGRITY_MISMATCH` hard-fail |
+| Obfuscated payload inserted into existing package | `OBFUSCATED_CODE` + AST diff |
+| (v1.1) Typosquat on a popular package name | `TYPOSQUAT_SUSPICION` |
+| (v1.1) Wheel / sdist divergence in PyPI packages | `WHEEL_SDIST_MISMATCH` |
+
+### Out of scope (LockRay will probably miss)
+
+LockRay does **not** claim to catch these. The docs surface this list prominently so users don't build false confidence.
+
+- **Dormant logic bombs** — malicious code that only activates on a specific date, hostname, or env var. Static diff sees it as benign code.
+- **Highly targeted payloads** — attacks crafted for a specific victim that look innocuous in isolation.
+- **Obfuscated native binaries** — `.node` addons, pre-built wheels, or shipped `.so` files. LockRay does not decompile.
+- **Maintainer-approved malicious behavior** — a long-trusted maintainer knowingly shipping something harmful, without obvious signals (no postinstall, no obfuscation, no exfil pattern). This is why LockRay is a *complement* to human review, not a replacement.
+- **Runtime-only activation** — code that reaches out only when certain runtime conditions are met, with no static signal at publish time.
+- **Attacks below the dependency-update layer** — compromise of the developer's machine, IDE extensions, registry mirror, or GitHub Actions runner. LockRay observes lockfile changes; it does not secure the CI environment itself.
+
+### Design consequence
+
+The UX must never say "this dependency is safe." It says "no high-confidence risk signals found." Subtle, but important — the former is a claim LockRay can't make, the latter is one it can.
+
+---
+
+## 16. Signal Availability Matrix
+
+Many signals in security tooling are unreliable in practice. This table makes availability honest up-front and drives which signals are v1.0 vs v1.1.
+
+| Signal | npm availability | PyPI availability | Notes |
+|--------|------------------|-------------------|-------|
+| Package metadata (version, publisher, publish time) | **deterministic** (registry API) | **deterministic** (JSON API) | Stable; cacheable |
+| Tarball / wheel artifact | **deterministic** (`pacote` / HTTPS download) | **deterministic** (JSON API) | Rate-limit-aware fetch; see §17 |
+| Integrity hash | **deterministic** (in lockfile) | **deterministic** (in `poetry.lock` / `uv.lock`) | v1.1 for PyPI |
+| Maintainer / publisher identity | **deterministic** (registry `_npmUser`) | **deterministic** (uploaded_by in JSON) | v1.0 for npm |
+| Publisher 2FA status | **requires-token** (npm token with access) | **unavailable** via public API | v1.1 only; opt-in auth |
+| Publish velocity | **best-effort** (derivable from metadata, but noisy) | **best-effort** | v1.1; low confidence |
+| OSV / GHSA advisories | **deterministic** (OSV.dev API) | **deterministic** (OSV.dev API) | Rate-limit-aware |
+| Upstream GitHub repo state (archived / deleted) | **best-effort, rate-limited** (GitHub API, needs token for unauthenticated rate ceiling) | same | v1.0 if token present; graceful degrade if absent |
+| Sigstore / provenance attestation | **deterministic** where present | **deterministic** where present | v1.1+ |
+| Typosquat popularity list | **best-effort** (derivable from npm download stats) | **best-effort** (PyPI stats) | v1.1 |
+| Wheel vs sdist divergence | — | **deterministic** (both artifacts available) | v1.1 |
+
+**Rule of thumb for v1.0 inclusion:** a rule based on a **best-effort** or **rate-limited** signal is deferred unless the signal has a reliable fallback. Hard-fail codes are *only* allowed on deterministic signals.
+
+---
+
+## 17. Network & Rate-Limit Behavior
+
+LockRay runs in CI. It must be fast, predictable, and honest about degradation.
+
+### Per-request defaults
+
+| Setting | Default | Configurable via |
+|---------|---------|------------------|
+| Per-request timeout | 10s | `network.timeout-ms` |
+| Retries | 2 (exponential backoff: 1s, 3s) | `network.max-retries` |
+| Overall tool timeout | 5 min | `network.total-timeout-ms` |
+| Concurrency cap per host | 4 | `network.max-concurrent` |
+
+### Modes
+
+- **Online** (default) — network calls allowed, OSV + registry + GitHub as needed.
+- **Offline** (`--offline` or `network.offline-mode: true`) — no network calls; only cached results plus lockfile-local checks (install-script presence, source change, integrity mismatch, prior-cached analyses). Any finding that requires a network lookup is emitted as `info` with a clear note.
+- **Degraded** (auto) — triggered when a required upstream (OSV, registry, GitHub) fails beyond retries. Analysis continues with whatever signals were collected; the report includes a `degraded: true` flag and an enumerated list of missed signals.
+
+### Degraded-mode verdict policy (configurable)
+
+`network.degraded-mode-verdict` — what the final verdict defaults to when the tool ran degraded. Options:
+- `review` (default) — never silently pass a PR LockRay couldn't fully analyze
+- `safe` — trust the partial analysis (for projects that accept the tradeoff)
+- `block` — aggressive default for high-security repos
+
+Rationale: a silent pass on a degraded run is exactly how supply-chain tools end up blamed for missing an attack. Review is the honest default.
+
+---
+
+## 18. GitHub Action Permission Model
+
+A security tool that runs in CI must not itself become a CI supply-chain risk. The Action is designed with the smallest viable permission set and clear guidance on the `pull_request` vs `pull_request_target` tradeoff.
+
+### Default event
+
+Action recommends `pull_request` (runs from the fork's code, no write access to target repo). This is safe but can't post PR comments or status checks on forks without additional handling.
+
+### Two-job pattern (recommended in docs)
+
+```yaml
+# Job 1: untrusted analysis — runs on pull_request, no secrets, no write perms
+analyze:
+  permissions:
+    contents: read
+  # runs LockRay, uploads report.json as artifact
+
+# Job 2: trusted reporting — runs on workflow_run after job 1
+report:
+  permissions:
+    pull-requests: write
+    checks: write
+  # downloads artifact, posts PR comment + status check
+```
+
+This is the pattern used by projects like `dependency-review-action` and it's the only model that safely lets fork PRs get comments without exposing secrets to fork code.
+
+### Required permissions, by operation
+
+| Operation | Permission | Notes |
+|-----------|-----------|-------|
+| Read lockfiles + git history | `contents: read` | Always needed |
+| Post PR comment | `pull-requests: write` | In reporting job only |
+| Set status check | `checks: write` | In reporting job only |
+| Upload report artifact | (built into Actions) | No extra perm |
+| Read GitHub repo metadata (archived/deleted upstream) | `GITHUB_TOKEN` default (no elevation) | Falls back to unauthenticated on low-perm runs |
+
+### Self-awareness rules
+
+- Action **never** takes a token in its inputs; it uses `GITHUB_TOKEN` from the calling workflow.
+- Action **never** executes package code — no `npm install`, no `postinstall` runs. All analysis is static.
+- Action **never** reads `secrets.*` beyond `GITHUB_TOKEN`.
+- Action's own dependencies are pinned by commit SHA in the release, not by tag. Users pin the Action itself by commit SHA in their workflows (documented as best practice).
+- Action releases are built with provenance attestation (GitHub OIDC + `npm publish --provenance`).
+
+---
+
+## 19. Open Questions (deferred, not blocking v1.0)
+
+- **Provenance / Sigstore integration** — when upstream artifacts ship signed attestations, how do we weight them as a positive trust signal? Design TBD alongside v1.1 work.
+- **Private registries** — `.npmrc` / `pip.conf` with auth: how do we fetch and analyze? v1.0 supports public defaults only.
+- **Dogfooding LockRay on its own releases** — track as v1.0 release checklist item; may require carve-outs since the tool itself legitimately reads env vars and makes network calls.
+- **Score calibration over time** — the weights in §9 are initial guesses. Mechanism for tuning them from community reports is v1.1+.
