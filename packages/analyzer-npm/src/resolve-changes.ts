@@ -76,13 +76,16 @@ export async function resolveNpmChanges(
       !!after &&
       before.version === after.version &&
       before.integrity !== after.integrity;
+    // Flag any resolved-URL change except null↔null (both sides absent).
+    // Covers string→string redirection, null→string (newly resolved), and
+    // string→null (resolved field removed). All three are real supply-chain
+    // signals per spec §8 NEW_DEPENDENCY_SOURCE.
     const sourceChanged =
       !!before &&
       !!after &&
       before.version === after.version &&
-      !!before.resolved &&
-      !!after.resolved &&
-      before.resolved !== after.resolved;
+      before.resolved !== after.resolved &&
+      (before.resolved !== null || after.resolved !== null);
 
     const isNoOp =
       fromVersion === toVersion && !integrityChanged && !sourceChanged;
