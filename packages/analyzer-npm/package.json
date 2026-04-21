@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@lockray/types": "*",
-    "execa": "^9.5.0",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.0"
   },

@@ -221,6 +221,52 @@ describe("resolveNpmChanges", () => {
     });
   });
 
+  it("flags sourceChanged when resolved transitions from null to a URL", async () => {
+    const before = JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "demo", version: "1.0.0", dependencies: { pkg: "^1" } },
+        "node_modules/pkg": {
+          version: "1.0.0",
+          integrity: "sha512-abc",
+          // no `resolved` field — models a lockfile regenerated without one
+        },
+      },
+    });
+    const after = JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "demo", version: "1.0.0", dependencies: { pkg: "^1" } },
+        "node_modules/pkg": {
+          version: "1.0.0",
+          resolved: "https://my-mirror.internal/pkg/-/pkg-1.0.0.tgz",
+          integrity: "sha512-abc",
+        },
+      },
+    });
+    const manifest = JSON.stringify({
+      name: "demo",
+      version: "1.0.0",
+      dependencies: { pkg: "^1" },
+    });
+
+    const gitShow = stubGitShow(
+      new Map([
+        ["base:package-lock.json", before],
+        ["head:package-lock.json", after],
+        ["base:package.json", manifest],
+        ["head:package.json", manifest],
+      ]),
+    );
+
+    const changes = await resolveNpmChanges(baseProject(), "base", "head", gitShow);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      name: "pkg",
+      sourceChanged: true,
+    });
+  });
+
   it("returns empty array when lockfile content is identical", async () => {
     const same = JSON.stringify({
       lockfileVersion: 3,

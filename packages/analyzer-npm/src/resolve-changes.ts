@@ -17,6 +17,9 @@ function parseLockfile(path: string, content: string): NpmLockfile {
   return parsePackageLock(content);
 }
 
+// POSIX-only: the `/` check detects absolute paths on macOS/Linux. Windows
+// absolute paths (C:\...) are not handled in M1; revisit for cross-platform
+// support when adding Windows CI.
 function toRelative(projectRoot: string, absPath: string): string {
   if (absPath.startsWith("/")) {
     return relative(projectRoot, absPath) || absPath;
