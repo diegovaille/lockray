@@ -3,33 +3,39 @@ import type {
   AnalysisMode,
   DependencyChange,
   Finding,
+  GitShowFn,
   ProjectInput,
 } from "@lockray/types";
+import { resolveNpmChanges } from "./resolve-changes.js";
 
 const SUPPORTED_LOCKFILES = ["package-lock.json", "pnpm-lock.yaml"] as const;
 
 export class NpmAnalyzer implements Analyzer {
   public readonly ecosystem = "npm" as const;
 
+  constructor(private readonly gitShow: GitShowFn) {}
+
   canHandle(files: string[]): boolean {
     return files.some((f) => {
-      const basename = f.split("/").pop() ?? f;
-      return (SUPPORTED_LOCKFILES as readonly string[]).includes(basename);
+      const base = f.split("/").pop() ?? f;
+      return (SUPPORTED_LOCKFILES as readonly string[]).includes(base);
     });
   }
 
   async resolveChanges(
-    _project: ProjectInput,
-    _base: string,
-    _head: string,
+    project: ProjectInput,
+    base: string,
+    head: string,
   ): Promise<DependencyChange[]> {
-    throw new Error("NpmAnalyzer.resolveChanges: not implemented (wired in Task 9)");
+    return resolveNpmChanges(project, base, head, this.gitShow);
   }
 
   async analyze(
     _change: DependencyChange,
     _mode: AnalysisMode,
   ): Promise<Finding[]> {
-    throw new Error("NpmAnalyzer.analyze: not implemented in M1 (scheduled for M2+)");
+    throw new Error(
+      "NpmAnalyzer.analyze: not implemented in M1 (scheduled for M2+)",
+    );
   }
 }

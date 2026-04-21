@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { NpmAnalyzer } from "./index.js";
 
+const stubGitShow = async () => null;
+
 describe("NpmAnalyzer", () => {
-  const analyzer = new NpmAnalyzer();
+  const analyzer = new NpmAnalyzer(stubGitShow);
 
   it("declares ecosystem = 'npm'", () => {
     expect(analyzer.ecosystem).toBe("npm");
@@ -24,7 +26,7 @@ describe("NpmAnalyzer", () => {
     expect(analyzer.canHandle(["poetry.lock"])).toBe(false);
   });
 
-  it("analyze throws NotImplementedError in M1", async () => {
+  it("analyze throws in M1", async () => {
     await expect(
       analyzer.analyze(
         {
