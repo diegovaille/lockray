@@ -49,7 +49,7 @@ function buildProject(
     ecosystem: "npm",
     manifestPaths: [manifestPath],
     lockfilePath: lockfilePath ?? "",
-    parseOutcome: lockfilePath ? "fully-supported" : "partially-supported",
+    parseOutcome: lockfilePath ? "fully-supported" : "missing",
   };
 }
 
@@ -75,7 +75,12 @@ export async function discoverProjects(rootPath: string): Promise<ProjectInput[]
       if (!existsSync(wsManifestPath)) continue;
       const wsLockfile = pickLockfile(wsPath);
       const rel = relative(rootPath, wsPath);
-      results.push(buildProject(rootPath, wsPath, rel, wsLockfile ?? rootLockfile));
+      // Sub-workspaces get only their own lockfile in M1. Inheriting the
+      // root lockfile would mix absolute paths across workspace roots and
+      // break git-show-based change detection (Task 9). When monorepos
+      // with a single shared root lockfile are supported, revisit by adding
+      // gitRootPath to ProjectInput.
+      results.push(buildProject(rootPath, wsPath, rel, wsLockfile));
     }
   }
   return results;

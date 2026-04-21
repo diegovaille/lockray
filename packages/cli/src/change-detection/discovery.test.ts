@@ -48,12 +48,12 @@ describe("discoverProjects", () => {
     expect(projects[0].lockfilePath).toBe(join(tmp, "pnpm-lock.yaml"));
   });
 
-  it("emits partially-supported when manifest exists but no lockfile", async () => {
+  it("emits missing when manifest exists but no lockfile", async () => {
     writeJson(join(tmp, "package.json"), { name: "demo", version: "1.0.0" });
 
     const projects = await discoverProjects(tmp);
     expect(projects).toHaveLength(1);
-    expect(projects[0].parseOutcome).toBe("partially-supported");
+    expect(projects[0].parseOutcome).toBe("missing");
   });
 
   it("returns one ProjectInput per workspace in a monorepo", async () => {
@@ -71,6 +71,23 @@ describe("discoverProjects", () => {
     const projects = await discoverProjects(tmp);
     const names = projects.map((p) => p.workspaceName).sort();
     expect(names).toEqual(["packages/a", "packages/b", "root"]);
+  });
+
+  it("sub-workspaces without their own lockfile emit missing (no root-lockfile inheritance in M1)", async () => {
+    writeJson(join(tmp, "package.json"), {
+      name: "root",
+      private: true,
+      workspaces: ["packages/*"],
+    });
+    writeJson(join(tmp, "package-lock.json"), { lockfileVersion: 3 });
+    mkdirSync(join(tmp, "packages/a"), { recursive: true });
+    writeJson(join(tmp, "packages/a/package.json"), { name: "a", version: "1.0.0" });
+
+    const projects = await discoverProjects(tmp);
+    const sub = projects.find((p) => p.workspaceName === "packages/a");
+    expect(sub).toBeDefined();
+    expect(sub?.parseOutcome).toBe("missing");
+    expect(sub?.lockfilePath).toBe("");
   });
 
   it("returns empty array when repo has no npm manifests", async () => {
