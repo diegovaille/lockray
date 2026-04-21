@@ -6,5 +6,8 @@
   },
   "include": ["bin/**/*", "src/**/*"],
   "exclude": ["**/*.test.ts"],
-  "references": [{ "path": "../types" }]
+  "references": [
+    { "path": "../types" },
+    { "path": "../analyzer-npm" }
+  ]
 }
