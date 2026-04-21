@@ -5,7 +5,8 @@ export type ParseOutcome =
   | "fully-supported"
   | "partially-supported"
   | "invalid"
-  | "unsupported";
+  | "unsupported"
+  | "missing";
 
 export interface Evidence {
   kind: "code-snippet" | "metadata" | "registry" | "advisory" | "repo" | "heuristic";
@@ -66,3 +67,5 @@ export interface Analyzer {
   ): Promise<DependencyChange[]>;
   analyze(change: DependencyChange, mode: AnalysisMode): Promise<Finding[]>;
 }
+
+export type GitShowFn = (ref: string, path: string) => Promise<string | null>;
