@@ -103,6 +103,10 @@ export function buildCheckCommand(): Command {
   return cmd;
 }
 
+function truncate(value: string, max = 64): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
 function renderPretty(
   base: string,
   head: string,
@@ -110,24 +114,72 @@ function renderPretty(
   blocked: boolean,
 ): void {
   const out = process.stdout;
+  const totalFindings = workspaces.reduce((n, w) => n + w.findings.length, 0);
   out.write(`🔍 LockRay — dependency risk report\n`);
   out.write(`Base: ${base}  Head: ${head}\n\n`);
-  out.write(blocked ? `Verdict: ❌ BLOCKED\n\n` : `Verdict: ⚠ review findings below\n\n`);
+  if (blocked) {
+    out.write(`Verdict: ❌ BLOCKED — at least one hard-fail rule fired\n\n`);
+  } else if (totalFindings > 0) {
+    out.write(`Verdict: ⚠ review findings below\n\n`);
+  } else {
+    out.write(`Verdict: ✅ no high-confidence risk signals found\n\n`);
+  }
+
   for (const ws of workspaces) {
     out.write(`Workspace: ${ws.workspace} (${ws.ecosystem}, ${ws.parseOutcome})\n`);
     if (ws.changes.length === 0) {
       out.write(`  no dependency changes detected\n\n`);
       continue;
     }
-    out.write(`  changes: ${ws.changes.length}, findings: ${ws.findings.length}\n`);
+
+    // What changed — list every dependency change, even ones with no findings,
+    // so a reviewer can see the surface LockRay examined.
+    out.write(`  Dependency changes (${ws.changes.length}):\n`);
+    for (const c of ws.changes) {
+      const from = c.fromVersion ?? "(added)";
+      const to = c.toVersion ?? "(removed)";
+      const tag = c.direct ? "direct" : "transitive";
+      const flags: string[] = [];
+      if (c.integrityChanged) flags.push("integrity changed");
+      if (c.sourceChanged) flags.push("source changed");
+      const flagStr = flags.length > 0 ? `  [${flags.join(", ")}]` : "";
+      out.write(`    • ${c.name}  ${from} → ${to}  (${tag})${flagStr}\n`);
+    }
+
+    if (ws.findings.length === 0) {
+      out.write(`  No findings.\n\n`);
+      continue;
+    }
+
+    // Why LockRay is worried + evidence — group by finding, show title + hint.
+    out.write(`\n  Findings (${ws.findings.length}):\n`);
     for (const f of ws.findings) {
       const mark = f.hardFail ? "❌" : f.severity === "critical" ? "🚨" : "⚠ ";
-      out.write(`    ${mark} ${f.code}  ${f.packageName}@${f.packageVersion}  (${f.severity})\n`);
+      const tag = f.hardFail ? `${f.severity}, hard-fail` : f.severity;
+      out.write(`    ${mark} ${f.packageName}@${f.packageVersion} — ${f.title}\n`);
+      out.write(`       rule: ${f.code}  (${tag})\n`);
       for (const e of f.evidence) {
-        if (e.metadataField) {
-          out.write(`       - ${e.metadataField}: ${String(e.oldValue ?? "∅")} → ${String(e.newValue ?? "∅")}\n`);
+        if (e.metadataField && (e.oldValue !== undefined || e.newValue !== undefined)) {
+          const before = truncate(String(e.oldValue ?? "∅"));
+          const after = truncate(String(e.newValue ?? "∅"));
+          out.write(`       evidence: ${e.metadataField}\n`);
+          out.write(`         before: ${before}\n`);
+          out.write(`         after:  ${after}\n`);
+        } else if (e.registryUrl || e.oldValue || e.newValue) {
+          const before = truncate(String(e.oldValue ?? "∅"));
+          const after = truncate(String(e.newValue ?? e.registryUrl ?? "∅"));
+          out.write(`       evidence: resolved source\n`);
+          out.write(`         before: ${before}\n`);
+          out.write(`         after:  ${after}\n`);
         } else if (e.advisoryId) {
-          out.write(`       - advisory: ${e.advisoryId}\n`);
+          out.write(`       advisory: ${e.advisoryId}`);
+          if (e.confidenceReason) out.write(` — ${e.confidenceReason}`);
+          out.write(`\n`);
+        } else if (e.confidenceReason) {
+          out.write(`       matched: ${e.confidenceReason}\n`);
+        }
+        if (e.remediationHint) {
+          out.write(`       fix: ${e.remediationHint}\n`);
         }
       }
     }
