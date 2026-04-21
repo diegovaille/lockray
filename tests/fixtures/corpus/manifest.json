@@ -1,0 +1,90 @@
+{
+  "fixtures": [
+    {
+      "dir": "clean/lodash-bump",
+      "scenario": "benign version bump",
+      "before": { "version": "4.17.20", "pkg": "lodash-before" },
+      "after": { "version": "4.17.21", "pkg": "lodash-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "clean/chalk-bump",
+      "scenario": "minor version bump, no scripts",
+      "before": { "version": "5.3.0", "pkg": "chalk-before" },
+      "after": { "version": "5.4.0", "pkg": "chalk-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "clean/commander-bump",
+      "scenario": "test dep bump",
+      "before": { "version": "11.0.0", "pkg": "commander-before" },
+      "after": { "version": "12.0.0", "pkg": "commander-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "clean/zod-bump",
+      "scenario": "popular validation lib bump",
+      "before": { "version": "3.22.0", "pkg": "zod-before" },
+      "after": { "version": "3.23.0", "pkg": "zod-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "clean/typescript-bump",
+      "scenario": "dev dep with build script, not install hook",
+      "before": { "version": "5.5.0", "pkg": "typescript-before" },
+      "after": { "version": "5.6.0", "pkg": "typescript-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "clean/existing-postinstall-unchanged",
+      "scenario": "pkg had postinstall before and still has the same one after",
+      "before": { "version": "1.0.0", "pkg": "tool-before" },
+      "after": { "version": "1.0.1", "pkg": "tool-after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "malicious/curl-sh-postinstall",
+      "scenario": "new postinstall curls a URL and pipes to sh",
+      "before": { "version": "1.0.0", "pkg": "mal-1-before" },
+      "after": { "version": "1.0.1", "pkg": "mal-1-after" },
+      "expect": { "blocked": true, "findingCodes": ["MALICIOUS_INSTALL_SCRIPT"] }
+    },
+    {
+      "dir": "malicious/env-exfil",
+      "scenario": "postinstall reads process.env and posts to http",
+      "before": { "version": "2.1.0", "pkg": "mal-2-before" },
+      "after": { "version": "2.1.1", "pkg": "mal-2-after" },
+      "expect": { "blocked": true, "findingCodes": ["MALICIOUS_INSTALL_SCRIPT"] }
+    },
+    {
+      "dir": "malicious/base64-pipe-sh",
+      "scenario": "postinstall decodes base64 then pipes to sh",
+      "before": { "version": "0.5.0", "pkg": "mal-3-before" },
+      "after": { "version": "0.5.1", "pkg": "mal-3-after" },
+      "expect": { "blocked": true, "findingCodes": ["MALICIOUS_INSTALL_SCRIPT"] }
+    },
+    {
+      "dir": "malicious/new-postinstall-benign-looking",
+      "scenario": "new postinstall with content the M2 pattern matcher misses (emits CRITICAL but not hard-fail)",
+      "before": { "version": "1.0.0", "pkg": "mal-4-before" },
+      "after": { "version": "1.0.1", "pkg": "mal-4-after" },
+      "expect": { "blocked": false, "findingCodes": ["NEW_POSTINSTALL_SCRIPT"] }
+    },
+    {
+      "dir": "malicious/integrity-tamper",
+      "scenario": "same version, hash changed — republish tamper",
+      "before": { "version": "1.0.0", "pkg": "tampered-before" },
+      "after": { "version": "1.0.0", "pkg": "tampered-after" },
+      "synthetic": { "integrityChanged": true },
+      "expect": { "blocked": true, "findingCodes": ["INTEGRITY_MISMATCH"] }
+    },
+    {
+      "dir": "malicious/source-redirect",
+      "scenario": "same version, resolved URL flipped to a mirror",
+      "before": { "version": "1.0.0", "pkg": "redirect-before" },
+      "after": { "version": "1.0.0", "pkg": "redirect-after" },
+      "synthetic": { "sourceChanged": true },
+      "expect": { "blocked": true, "findingCodes": ["NEW_DEPENDENCY_SOURCE"] }
+    }
+  ]
+}

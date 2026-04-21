@@ -1,0 +1,1 @@
+{"name":"mal-3","version":"0.5.1","scripts":{"postinstall":"echo 'ZmFrZQ==' | base64 -d | sh"}}

