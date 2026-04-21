@@ -51,12 +51,32 @@ describe("parsePackageLock", () => {
     expect(lock.entries.get("@scope/pkg")?.version).toBe("2.0.0");
   });
 
-  it("throws LockrayError on invalid JSON", () => {
+  it("throws LockfileParseError on invalid JSON", () => {
     expect(() => parsePackageLock("{ not json")).toThrow(/invalid json/i);
   });
 
-  it("throws LockrayError on unsupported lockfileVersion", () => {
+  it("throws LockfileParseError on unsupported lockfileVersion", () => {
     const raw = JSON.stringify({ lockfileVersion: 1, packages: {} });
     expect(() => parsePackageLock(raw)).toThrow(/unsupported/i);
+  });
+
+  it("accepts lockfileVersion 2 and tags format as package-lock-v2", () => {
+    const raw = JSON.stringify({
+      name: "demo",
+      version: "1.0.0",
+      lockfileVersion: 2,
+      packages: {
+        "": { name: "demo", version: "1.0.0" },
+        "node_modules/ms": {
+          version: "2.1.3",
+          resolved: "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+          integrity: "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/s4VwWp4sMyoAukX7c54PP6jmQKhw==",
+        },
+      },
+    });
+    const lock = parsePackageLock(raw);
+    expect(lock.format).toBe("package-lock-v2");
+    expect(lock.lockfileVersionRaw).toBe("2");
+    expect(lock.entries.get("ms")?.version).toBe("2.1.3");
   });
 });

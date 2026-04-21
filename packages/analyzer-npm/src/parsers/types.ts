@@ -7,7 +7,7 @@ export interface NpmLockEntry {
 }
 
 export interface NpmLockfile {
-  format: "package-lock-v3" | "pnpm-lock-v9";
+  format: "package-lock-v2" | "package-lock-v3" | "pnpm-lock-v9";
   lockfileVersionRaw: string;
   entries: Map<string, NpmLockEntry>;
 }

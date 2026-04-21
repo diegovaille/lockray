@@ -54,8 +54,11 @@ export function parsePackageLock(raw: string): NpmLockfile {
 
   const parsed = PackageLockSchema.safeParse(data);
   if (!parsed.success) {
+    const details = parsed.error.issues
+      .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; ");
     throw new LockfileParseError(
-      `Schema mismatch in package-lock.json: ${parsed.error.message}`,
+      `Schema mismatch in package-lock.json: ${details}`,
       "SCHEMA_MISMATCH",
     );
   }
@@ -72,6 +75,10 @@ export function parsePackageLock(raw: string): NpmLockfile {
     const name = nameFromPath(path);
     if (!name) continue;
     if (!entry.version) continue;
+    // TODO(M6): If the same name appears at multiple nesting depths (hoisted
+    // vs nested resolution), the last path wins and earlier versions are
+    // lost. Multi-version support is deferred to M6 when transitive
+    // escalation handling is added.
     entries.set(name, {
       name,
       version: entry.version,
@@ -81,8 +88,12 @@ export function parsePackageLock(raw: string): NpmLockfile {
     });
   }
 
+  const format = parsed.data.lockfileVersion === 2
+    ? ("package-lock-v2" as const)
+    : ("package-lock-v3" as const);
+
   return {
-    format: "package-lock-v3",
+    format,
     lockfileVersionRaw: String(parsed.data.lockfileVersion),
     entries,
   };
