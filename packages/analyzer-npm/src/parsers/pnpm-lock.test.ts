@@ -55,4 +55,42 @@ describe("parsePnpmLock", () => {
       parsePnpmLock("lockfileVersion: '5.4'\npackages: {}\n"),
     ).toThrow(/unsupported/i);
   });
+
+  it("handles npm alias syntax (foo@npm:bar@1.0.0)", () => {
+    const raw = [
+      "lockfileVersion: '9.0'",
+      "packages:",
+      "  'foo@npm:bar@1.0.0':",
+      "    resolution:",
+      "      integrity: sha512-aliased",
+      "",
+    ].join("\n");
+    const lock = parsePnpmLock(raw);
+    const entry = lock.entries.get("foo");
+    expect(entry).toBeDefined();
+    expect(entry?.version).toBe("npm:bar@1.0.0");
+  });
+
+  it("skips workspace link entries (file:/link:)", () => {
+    const raw = [
+      "lockfileVersion: '9.0'",
+      "packages:",
+      "  'file:../local-pkg':",
+      "    resolution:",
+      "      directory: ../local-pkg",
+      "      type: directory",
+      "  'link:../other-pkg':",
+      "    resolution:",
+      "      directory: ../other-pkg",
+      "      type: directory",
+      "  lodash@4.17.20:",
+      "    resolution:",
+      "      integrity: sha512-real",
+      "",
+    ].join("\n");
+    const lock = parsePnpmLock(raw);
+    expect(lock.entries.size).toBe(1);
+    expect(lock.entries.get("lodash")?.version).toBe("4.17.20");
+    expect(lock.entries.has("file:../local-pkg")).toBe(false);
+  });
 });

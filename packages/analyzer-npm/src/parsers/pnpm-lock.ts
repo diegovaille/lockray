@@ -21,9 +21,40 @@ const PnpmLockSchema = z
   })
   .passthrough();
 
+/**
+ * Parses a pnpm v9 packages-map key into name+version.
+ *
+ * Handles:
+ *   - Plain:           lodash@4.17.20
+ *   - Scoped:          @scope/pkg@2.0.0
+ *   - Peer suffix:     foo@1.0.0(peer@2.0.0)
+ *   - npm alias:       foo@npm:bar@1.0.0 → {name:"foo", version:"npm:bar@1.0.0"}
+ *
+ * Intentionally skips (returns null):
+ *   - Workspace links: file:../local-pkg, link:../local-pkg
+ *     These have no meaningful version for integrity/CVE analysis and
+ *     don't participate in the change-detection pipeline in M1.
+ */
 function splitPnpmKey(key: string): { name: string; version: string } | null {
-  // Strip peer-dep suffix before splitting: "foo@1.0.0(peer@2.0.0)" → "foo@1.0.0"
+  // Skip workspace link entries — no version to track.
+  if (key.startsWith("file:") || key.startsWith("link:")) return null;
+
+  // Strip any peer-dependency suffix before locating the name/version separator.
   const stripped = key.includes("(") ? key.slice(0, key.indexOf("(")) : key;
+
+  // npm alias syntax: `foo@npm:bar@1.0.0` — the FIRST `@` is the real separator.
+  // Scoped + alias: `@scope/foo@npm:bar@1.0.0` — the SECOND `@` is the separator.
+  if (stripped.includes("@npm:")) {
+    // Find the `@` immediately preceding `npm:`.
+    const aliasMarker = stripped.indexOf("@npm:");
+    if (aliasMarker <= 0) return null;
+    const name = stripped.slice(0, aliasMarker);
+    const version = stripped.slice(aliasMarker + 1);
+    if (!name || !version) return null;
+    return { name, version };
+  }
+
+  // Non-alias: last `@` is the separator (skips the scope `@` for scoped names).
   const at = stripped.lastIndexOf("@");
   if (at <= 0) return null;
   const name = stripped.slice(0, at);
@@ -39,7 +70,7 @@ export function parsePnpmLock(raw: string): NpmLockfile {
   } catch (err) {
     throw new LockfileParseError(
       `Invalid YAML in pnpm-lock.yaml: ${(err as Error).message}`,
-      "INVALID_JSON",
+      "INVALID_YAML",
     );
   }
 

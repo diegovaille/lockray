@@ -20,7 +20,11 @@ const PackageLockSchema = z
 export class LockfileParseError extends Error {
   constructor(
     message: string,
-    public readonly code: "INVALID_JSON" | "UNSUPPORTED_VERSION" | "SCHEMA_MISMATCH",
+    public readonly code:
+      | "INVALID_JSON"
+      | "INVALID_YAML"
+      | "UNSUPPORTED_VERSION"
+      | "SCHEMA_MISMATCH",
   ) {
     super(message);
     this.name = "LockfileParseError";
