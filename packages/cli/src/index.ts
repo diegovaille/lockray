@@ -1,6 +1,8 @@
 import { Command } from "commander";
 import { buildCheckCommand } from "./commands/check.js";
 
+export { LockrayError } from "./util/errors.js";
+
 export function buildProgram(): Command {
   const program = new Command();
   program

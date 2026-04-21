@@ -3,14 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "bin": {
     "lockray": "./dist/bin/lockray.js"
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && chmod +x dist/bin/lockray.js",
     "clean": "tsc -b --clean"
   },
   "dependencies": {
