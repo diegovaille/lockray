@@ -16,6 +16,7 @@
   "dependencies": {
     "@lockray/types": "*",
     "commander": "^12.1.0",
-    "execa": "^9.5.0"
+    "execa": "^9.5.0",
+    "glob": "^11.0.0"
   }
 }
