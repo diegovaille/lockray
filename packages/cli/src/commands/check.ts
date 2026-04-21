@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import { NpmAnalyzer } from "@lockray/analyzer-npm";
-import type { DependencyChange, ProjectInput } from "@lockray/types";
+import type { DependencyChange, Finding, ProjectInput } from "@lockray/types";
 import { discoverProjects } from "../change-detection/discovery.js";
 import { makeGitShow } from "../change-detection/git-show.js";
+import { createPacoteFetcher } from "../tarball/pacote-fetcher.js";
+import { createHttpOsvClient } from "../cve/http-osv-client.js";
 
 export type CheckFormat = "json" | "pretty";
 
@@ -10,7 +12,7 @@ interface CheckOptions {
   base: string;
   head: string;
   cwd: string;
-  format: string; // validated to CheckFormat at runtime inside the action
+  format: string;
 }
 
 export interface WorkspaceResult {
@@ -18,6 +20,7 @@ export interface WorkspaceResult {
   ecosystem: "npm" | "pypi";
   parseOutcome: ProjectInput["parseOutcome"];
   changes: DependencyChange[];
+  findings: Finding[];
 }
 
 export function buildCheckCommand(): Command {
@@ -38,7 +41,9 @@ export function buildCheckCommand(): Command {
 
       const projects = await discoverProjects(opts.cwd);
       const gitShow = makeGitShow(opts.cwd);
-      const npmAnalyzer = new NpmAnalyzer(gitShow);
+      const fetcher = createPacoteFetcher();
+      const osv = createHttpOsvClient();
+      const analyzer = new NpmAnalyzer({ gitShow, fetcher, osv });
 
       const workspaces: WorkspaceResult[] = [];
       for (const project of projects) {
@@ -49,34 +54,46 @@ export function buildCheckCommand(): Command {
             ecosystem: project.ecosystem,
             parseOutcome: project.parseOutcome,
             changes: [],
+            findings: [],
           });
           continue;
         }
-        const changes = await npmAnalyzer.resolveChanges(
-          project,
-          opts.base,
-          opts.head,
-        );
+        const changes = await analyzer.resolveChanges(project, opts.base, opts.head);
+        const findings: Finding[] = [];
+        for (const change of changes) {
+          const f = await analyzer.analyze(change, "hybrid");
+          findings.push(...f);
+        }
         workspaces.push({
           workspace: project.workspaceName,
           ecosystem: project.ecosystem,
           parseOutcome: project.parseOutcome,
           changes,
+          findings,
         });
       }
 
       const allChanges = workspaces.flatMap((w) => w.changes);
+      const allFindings = workspaces.flatMap((w) => w.findings);
+      const blocked = allFindings.some((f) => f.hardFail === true);
 
       if (opts.format === "json") {
         process.stdout.write(
           JSON.stringify(
-            { base: opts.base, head: opts.head, workspaces, changes: allChanges },
+            {
+              base: opts.base,
+              head: opts.head,
+              workspaces,
+              changes: allChanges,
+              findings: allFindings,
+              blocked,
+            },
             null,
             2,
           ) + "\n",
         );
       } else {
-        renderPretty(opts.base, opts.head, workspaces);
+        renderPretty(opts.base, opts.head, workspaces, blocked);
       }
     });
   return cmd;
@@ -86,25 +103,29 @@ function renderPretty(
   base: string,
   head: string,
   workspaces: WorkspaceResult[],
+  blocked: boolean,
 ): void {
   const out = process.stdout;
-  out.write(`🔍 LockRay — change detection\n`);
+  out.write(`🔍 LockRay — dependency risk report\n`);
   out.write(`Base: ${base}  Head: ${head}\n\n`);
+  out.write(blocked ? `Verdict: ❌ BLOCKED\n\n` : `Verdict: ⚠ review findings below\n\n`);
   for (const ws of workspaces) {
     out.write(`Workspace: ${ws.workspace} (${ws.ecosystem}, ${ws.parseOutcome})\n`);
     if (ws.changes.length === 0) {
       out.write(`  no dependency changes detected\n\n`);
       continue;
     }
-    for (const c of ws.changes) {
-      const tag = c.direct ? "direct" : "transitive";
-      const from = c.fromVersion ?? "(added)";
-      const to = c.toVersion ?? "(removed)";
-      const flags: string[] = [];
-      if (c.integrityChanged) flags.push("integrity-changed");
-      if (c.sourceChanged) flags.push("source-changed");
-      const flagStr = flags.length > 0 ? `  [${flags.join(", ")}]` : "";
-      out.write(`  ${c.name}  ${from} → ${to}  [${tag}]${flagStr}\n`);
+    out.write(`  changes: ${ws.changes.length}, findings: ${ws.findings.length}\n`);
+    for (const f of ws.findings) {
+      const mark = f.hardFail ? "❌" : f.severity === "critical" ? "🚨" : "⚠ ";
+      out.write(`    ${mark} ${f.code}  ${f.packageName}@${f.packageVersion}  (${f.severity})\n`);
+      for (const e of f.evidence) {
+        if (e.metadataField) {
+          out.write(`       - ${e.metadataField}: ${String(e.oldValue ?? "∅")} → ${String(e.newValue ?? "∅")}\n`);
+        } else if (e.advisoryId) {
+          out.write(`       - advisory: ${e.advisoryId}\n`);
+        }
+      }
     }
     out.write("\n");
   }

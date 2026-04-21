@@ -18,6 +18,11 @@
     "@lockray/types": "*",
     "commander": "^12.1.0",
     "execa": "^9.5.0",
-    "glob": "^11.0.0"
+    "glob": "^11.0.0",
+    "pacote": "^19.0.0",
+    "tar": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/pacote": "^11.1.8"
   }
 }
