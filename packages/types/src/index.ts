@@ -69,3 +69,44 @@ export interface Analyzer {
 }
 
 export type GitShowFn = (ref: string, path: string) => Promise<string | null>;
+
+/**
+ * A tarball fetched from a package registry, staged for analysis.
+ *
+ * `packageJson` is the JSON-parsed root package.json extracted from the
+ * tarball — that is the one piece of metadata every M2 detection rule
+ * needs. Additional file access (for AST analysis in M4) will extend
+ * this shape later.
+ */
+export interface FetchedPackage {
+  ecosystem: Ecosystem;
+  name: string;
+  version: string;
+  integrity: string | null;
+  packageJson: Record<string, unknown>;
+}
+
+/**
+ * Injectable tarball-fetching dependency. The analyzer package is kept
+ * free of `pacote`/network concerns by taking this through DI in the
+ * same way as GitShowFn.
+ */
+export type TarballFetcher = (
+  ecosystem: Ecosystem,
+  name: string,
+  version: string,
+) => Promise<FetchedPackage>;
+
+/**
+ * User-facing LockRay error with a stable machine-readable code.
+ * Code values are documented per call-site; analyzers may subclass.
+ */
+export class LockrayError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = "LockrayError";
+  }
+}
