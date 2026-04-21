@@ -1,4 +1,7 @@
 import { z } from "zod";
+// TODO: LockfileParseError currently lives in the sibling package-lock parser
+// for historical reasons. Move it to a shared module (e.g. ./errors.ts or
+// @lockray/types) before Task 9 starts relying on it from @lockray/cli.
 import { LockfileParseError } from "./package-lock.js";
 
 const ManifestSchema = z
@@ -40,6 +43,15 @@ export function parsePackageJson(raw: string): ParsedManifest {
     );
   }
 
+  // directDeps intentionally unions ALL four declaration fields.
+  // - dependencies + optionalDependencies: installed at runtime; obvious.
+  // - devDependencies: a malicious postinstall runs on every developer's
+  //   `npm install`, so dev deps are a real supply-chain surface.
+  // - peerDependencies: included for symmetry and because peer declarations
+  //   can change across versions in ways a reviewer should see. If M2's
+  //   scoring engine needs to weight peer updates differently, split this
+  //   Set into runtime/dev/peer subsets at that time — do not quietly drop
+  //   a field from this union.
   const deps = new Set<string>();
   for (const field of [
     "dependencies",

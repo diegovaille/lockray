@@ -25,4 +25,31 @@ describe("parsePackageJson", () => {
   it("throws on invalid JSON", () => {
     expect(() => parsePackageJson("{ not json")).toThrow(/invalid json/i);
   });
+
+  it("throws SCHEMA_MISMATCH with path in the message for wrong-typed dep values", () => {
+    const raw = JSON.stringify({
+      name: "demo",
+      version: "1.0.0",
+      dependencies: { lodash: 42 }, // wrong — should be a string range
+    });
+    expect(() => parsePackageJson(raw)).toThrow(/schema mismatch.*dependencies\.lodash/i);
+  });
+
+  it("dedups names that appear in multiple dep fields", () => {
+    const raw = JSON.stringify({
+      dependencies: { react: "^18" },
+      peerDependencies: { react: "^18" },
+      devDependencies: { react: "^18" },
+    });
+    const { directDeps } = parsePackageJson(raw);
+    expect(directDeps.size).toBe(1);
+    expect(directDeps.has("react")).toBe(true);
+  });
+
+  it("accepts an empty object manifest", () => {
+    const { directDeps, name, version } = parsePackageJson("{}");
+    expect(directDeps.size).toBe(0);
+    expect(name).toBeNull();
+    expect(version).toBeNull();
+  });
 });
