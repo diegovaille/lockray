@@ -120,4 +120,30 @@ describe("classify", () => {
     const f = findings.find((x) => x.code === "CVE_VULNERABILITY");
     expect(f?.severity).toBe("info");
   });
+
+  it("emits NEW_POSTINSTALL_SCRIPT for a newly added package with an install hook (before=null)", () => {
+    const findings = classify(
+      change({ fromVersion: null, toVersion: "1.0.0" }),
+      null,
+      fetched("1.0.0", { scripts: { postinstall: "node ./setup.js" } }),
+      [],
+    );
+    const f = findings.find((x) => x.code === "NEW_POSTINSTALL_SCRIPT");
+    expect(f).toBeDefined();
+    expect(f?.hardFail).toBeUndefined();
+    expect(f?.evidence[0].oldValue).toBeUndefined();
+    expect(f?.evidence[0].newValue).toBe("node ./setup.js");
+  });
+
+  it("emits no install-hook findings for a removed package (after=null)", () => {
+    const findings = classify(
+      change({ fromVersion: "1.0.0", toVersion: null }),
+      fetched("1.0.0", { scripts: { postinstall: "echo existed" } }),
+      null,
+      [],
+    );
+    // after=null means the install-script block is skipped entirely.
+    expect(findings.some((f) => f.code === "NEW_POSTINSTALL_SCRIPT")).toBe(false);
+    expect(findings.some((f) => f.code === "MALICIOUS_INSTALL_SCRIPT")).toBe(false);
+  });
 });

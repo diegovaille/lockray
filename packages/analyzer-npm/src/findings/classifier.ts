@@ -5,16 +5,17 @@ import type {
   Finding,
   Severity,
 } from "@lockray/types";
-import { extractInstallScripts, type InstallHook } from "../install-scripts/extract.js";
+import { extractInstallScripts, HOOKS } from "../install-scripts/extract.js";
 import { matchMaliciousPatterns } from "../install-scripts/malicious-patterns.js";
 import {
   isMaliciousPackageAdvisory,
   normalizeOsvSeverity,
+  type OsvSeverityLevel,
   type OsvVulnerability,
 } from "../cve/types.js";
-import { FindingCode } from "./codes.js";
+import { FindingCode, type FindingCodeValue } from "./codes.js";
 
-const OSV_SEVERITY_TO_LOCKRAY: Record<string, Severity> = {
+const OSV_SEVERITY_TO_LOCKRAY: Record<OsvSeverityLevel, Severity> = {
   critical: "critical",
   high: "high",
   medium: "medium",
@@ -45,7 +46,7 @@ export function classify(
   }
 
   function emit(
-    code: string,
+    code: FindingCodeValue,
     title: string,
     severity: Severity,
     confidence: number,
@@ -78,8 +79,8 @@ export function classify(
         baseEvidence({
           kind: "metadata",
           metadataField: "integrity",
-          oldValue: before?.integrity ?? null as unknown as string,
-          newValue: after?.integrity ?? null as unknown as string,
+          oldValue: before?.integrity ?? undefined,
+          newValue: after?.integrity ?? undefined,
           remediationHint: "Investigate whether the package was re-published with the same version.",
         }),
       ],
@@ -95,10 +96,13 @@ export function classify(
       "critical",
       1.0,
       [
-        baseEvidence({
+        {
           kind: "registry",
+          registryUrl: change.resolvedAfter ?? undefined,
+          oldValue: change.resolvedBefore ?? undefined,
+          newValue: change.resolvedAfter ?? undefined,
           remediationHint: "Confirm the new resolved source is expected and trusted.",
-        }),
+        },
       ],
       true,
     );
@@ -109,7 +113,7 @@ export function classify(
     const newScripts = extractInstallScripts(after.packageJson);
     const oldScripts = before ? extractInstallScripts(before.packageJson) : {};
 
-    for (const hook of ["preinstall", "install", "postinstall", "prepare"] as InstallHook[]) {
+    for (const hook of HOOKS) {
       const now = newScripts[hook];
       const was = oldScripts[hook];
       if (!now) continue;
@@ -176,12 +180,16 @@ export function classify(
       continue;
     }
     const level = normalizeOsvSeverity(v);
-    const severity = OSV_SEVERITY_TO_LOCKRAY[level] ?? "info";
+    const severity = OSV_SEVERITY_TO_LOCKRAY[level];
+    // OSV /v1/query performs server-side version-range matching, so we trust
+    // the "affects this version" signal strongly. Not 1.0: spec §9 reserves
+    // that band for AST/deterministic-verified matches, leaving headroom for
+    // future cross-checks against independent advisory sources.
     emit(
       FindingCode.CVE_VULNERABILITY,
       `${v.id}: ${v.summary ?? "vulnerability"} affects ${change.name}@${version}`,
       severity,
-      1.0,
+      0.95,
       [
         {
           kind: "advisory",

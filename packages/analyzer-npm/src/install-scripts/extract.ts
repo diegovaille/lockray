@@ -2,7 +2,7 @@ export type InstallHook = "preinstall" | "install" | "postinstall" | "prepare";
 
 export type InstallScripts = Partial<Record<InstallHook, string>>;
 
-const HOOKS: readonly InstallHook[] = ["preinstall", "install", "postinstall", "prepare"];
+export const HOOKS: readonly InstallHook[] = ["preinstall", "install", "postinstall", "prepare"];
 
 /**
  * Pull the install-lifecycle hook scripts out of a parsed package.json.

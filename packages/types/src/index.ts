@@ -46,6 +46,10 @@ export interface DependencyChange {
   workspaceName: string;
   integrityChanged: boolean;
   sourceChanged: boolean;
+  /** Resolved source URL at base ref, when known; null when absent or same-value. */
+  resolvedBefore?: string | null;
+  /** Resolved source URL at head ref, when known; null when absent or same-value. */
+  resolvedAfter?: string | null;
 }
 
 export interface ProjectInput {

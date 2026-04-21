@@ -94,7 +94,7 @@ export async function resolveNpmChanges(
       fromVersion === toVersion && !integrityChanged && !sourceChanged;
     if (isNoOp) continue;
 
-    changes.push({
+    const change: DependencyChange = {
       ecosystem: "npm",
       name,
       fromVersion,
@@ -104,7 +104,12 @@ export async function resolveNpmChanges(
       workspaceName: project.workspaceName,
       integrityChanged,
       sourceChanged,
-    });
+    };
+    if (sourceChanged) {
+      change.resolvedBefore = before?.resolved ?? null;
+      change.resolvedAfter = after?.resolved ?? null;
+    }
+    changes.push(change);
   }
 
   return changes;
