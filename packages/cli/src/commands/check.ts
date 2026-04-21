@@ -4,14 +4,16 @@ import type { DependencyChange, ProjectInput } from "@lockray/types";
 import { discoverProjects } from "../change-detection/discovery.js";
 import { makeGitShow } from "../change-detection/git-show.js";
 
+export type CheckFormat = "json" | "pretty";
+
 interface CheckOptions {
   base: string;
   head: string;
   cwd: string;
-  format: string;
+  format: string; // validated to CheckFormat at runtime inside the action
 }
 
-interface WorkspaceResult {
+export interface WorkspaceResult {
   workspace: string;
   ecosystem: "npm" | "pypi";
   parseOutcome: ProjectInput["parseOutcome"];
@@ -27,6 +29,13 @@ export function buildCheckCommand(): Command {
     .option("--cwd <path>", "Repo root to scan", process.cwd())
     .option("--format <fmt>", "Output format: json | pretty", "pretty")
     .action(async (opts: CheckOptions) => {
+      if (opts.format !== "json" && opts.format !== "pretty") {
+        process.stderr.write(
+          `lockray: unknown --format value "${opts.format}"; expected "json" or "pretty"\n`,
+        );
+        process.exit(1);
+      }
+
       const projects = await discoverProjects(opts.cwd);
       const gitShow = makeGitShow(opts.cwd);
       const npmAnalyzer = new NpmAnalyzer(gitShow);
