@@ -1,7 +1,7 @@
 import yaml from "js-yaml";
 import { z } from "zod";
 import type { NpmLockEntry, NpmLockfile } from "./types.js";
-import { LockfileParseError } from "./package-lock.js";
+import { LockfileParseError } from "../errors.js";
 
 const PnpmPackageSchema = z
   .object({

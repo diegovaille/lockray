@@ -1,8 +1,5 @@
 import { z } from "zod";
-// TODO: LockfileParseError currently lives in the sibling package-lock parser
-// for historical reasons. Move it to a shared module (e.g. ./errors.ts or
-// @lockray/types) before Task 9 starts relying on it from @lockray/cli.
-import { LockfileParseError } from "./package-lock.js";
+import { LockfileParseError } from "../errors.js";
 
 const ManifestSchema = z
   .object({

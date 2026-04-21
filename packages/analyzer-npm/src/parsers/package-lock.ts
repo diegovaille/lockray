@@ -1,5 +1,8 @@
 import { z } from "zod";
+import { LockfileParseError } from "../errors.js";
 import type { NpmLockEntry, NpmLockfile } from "./types.js";
+
+export { LockfileParseError };
 
 const PackageEntrySchema = z
   .object({
@@ -16,20 +19,6 @@ const PackageLockSchema = z
     packages: z.record(z.string(), PackageEntrySchema),
   })
   .passthrough();
-
-export class LockfileParseError extends Error {
-  constructor(
-    message: string,
-    public readonly code:
-      | "INVALID_JSON"
-      | "INVALID_YAML"
-      | "UNSUPPORTED_VERSION"
-      | "SCHEMA_MISMATCH",
-  ) {
-    super(message);
-    this.name = "LockfileParseError";
-  }
-}
 
 function nameFromPath(path: string): string | null {
   if (path === "") return null;
