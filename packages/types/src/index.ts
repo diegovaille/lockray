@@ -50,6 +50,10 @@ export interface DependencyChange {
   resolvedBefore?: string | null;
   /** Resolved source URL at head ref, when known; null when absent or same-value. */
   resolvedAfter?: string | null;
+  /** Integrity hash at base ref, when integrityChanged is true; null when absent. */
+  integrityBefore?: string | null;
+  /** Integrity hash at head ref, when integrityChanged is true; null when absent. */
+  integrityAfter?: string | null;
 }
 
 export interface ProjectInput {

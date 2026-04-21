@@ -79,8 +79,8 @@ export function classify(
         baseEvidence({
           kind: "metadata",
           metadataField: "integrity",
-          oldValue: before?.integrity ?? undefined,
-          newValue: after?.integrity ?? undefined,
+          oldValue: change.integrityBefore ?? undefined,
+          newValue: change.integrityAfter ?? undefined,
           remediationHint: "Investigate whether the package was re-published with the same version.",
         }),
       ],

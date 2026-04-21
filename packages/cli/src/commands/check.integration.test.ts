@@ -1,8 +1,28 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { buildProgram } from "../index.js";
 import { createTmpRepo, type TmpRepo } from "../../../../tests/helpers/tmp-repo.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+vi.mock("../tarball/pacote-fetcher.js", () => ({
+  createPacoteFetcher: () => async (
+    ecosystem: string,
+    name: string,
+    version: string,
+  ) => ({
+    ecosystem,
+    name,
+    version,
+    integrity: null,
+    packageJson: { name, version },
+  }),
+}));
+
+vi.mock("../cve/http-osv-client.js", () => ({
+  createHttpOsvClient: () => ({
+    queryPackage: async () => [],
+  }),
+}));
 
 const FIX = join(process.cwd(), "tests/fixtures/package-lock");
 

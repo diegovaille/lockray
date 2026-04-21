@@ -33,7 +33,13 @@ function fetched(
 describe("classify", () => {
   it("emits INTEGRITY_MISMATCH hard-fail when integrityChanged is true", () => {
     const findings = classify(
-      change({ integrityChanged: true, fromVersion: "1.0.0", toVersion: "1.0.0" }),
+      change({
+        integrityChanged: true,
+        fromVersion: "1.0.0",
+        toVersion: "1.0.0",
+        integrityBefore: "sha512-original",
+        integrityAfter: "sha512-tampered",
+      }),
       fetched("1.0.0"),
       fetched("1.0.0"),
       [],
@@ -42,6 +48,8 @@ describe("classify", () => {
     expect(f).toBeDefined();
     expect(f?.hardFail).toBe(true);
     expect(f?.severity).toBe("critical");
+    expect(f?.evidence[0].oldValue).toBe("sha512-original");
+    expect(f?.evidence[0].newValue).toBe("sha512-tampered");
   });
 
   it("emits NEW_DEPENDENCY_SOURCE hard-fail when sourceChanged is true", () => {

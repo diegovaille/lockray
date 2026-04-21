@@ -60,6 +60,10 @@ export function buildCheckCommand(): Command {
         }
         const changes = await analyzer.resolveChanges(project, opts.base, opts.head);
         const findings: Finding[] = [];
+        // NOTE: tarball fetch failures are swallowed inside runAnalyze's
+        // fetchSafely helper; OSV errors currently propagate fatally and
+        // abort the CLI run. M3's PR-checker mode will want OSV errors
+        // wrapped similarly so partial progress survives network blips.
         for (const change of changes) {
           const f = await analyzer.analyze(change, "hybrid");
           findings.push(...f);

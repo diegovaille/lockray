@@ -109,6 +109,10 @@ export async function resolveNpmChanges(
       change.resolvedBefore = before?.resolved ?? null;
       change.resolvedAfter = after?.resolved ?? null;
     }
+    if (integrityChanged) {
+      change.integrityBefore = before?.integrity ?? null;
+      change.integrityAfter = after?.integrity ?? null;
+    }
     changes.push(change);
   }
 
