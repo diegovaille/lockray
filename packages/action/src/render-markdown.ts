@@ -85,6 +85,13 @@ export function renderMarkdown(report: CliReport, opts: RenderOptions = {}): str
   for (const ws of report.workspaces) {
     body.push(``);
     body.push(`### Workspace \`${ws.workspace}\` (${ws.ecosystem}, ${ws.parseOutcome})`);
+
+    // Unanalyzable workspaces: do not imply clean analysis where none happened.
+    if (ws.parseOutcome === "missing" || ws.parseOutcome === "invalid" || ws.parseOutcome === "unsupported") {
+      body.push(`_Workspace not analyzed (parse outcome: ${ws.parseOutcome})._`);
+      continue;
+    }
+
     if (ws.changes.length === 0) {
       body.push(`_No dependency changes detected._`);
     } else {
@@ -100,13 +107,16 @@ export function renderMarkdown(report: CliReport, opts: RenderOptions = {}): str
     }
 
     body.push(``);
-    body.push(`**Findings (${ws.findings.length})**`);
-
-    for (const f of ws.findings) {
-      if (remainingBudget <= 0) continue;
-      body.push(``);
-      body.push(renderFinding(f));
-      remainingBudget -= 1;
+    if (remainingBudget > 0) {
+      body.push(`**Findings (${ws.findings.length})**`);
+      for (const f of ws.findings) {
+        if (remainingBudget <= 0) break;
+        body.push(``);
+        body.push(renderFinding(f));
+        remainingBudget -= 1;
+      }
+    } else {
+      body.push(`_Findings omitted — see the truncation notice below._`);
     }
   }
 
