@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { NpmAnalyzer } from "@lockray/analyzer-npm";
-import type { DependencyChange, Finding, ProjectInput } from "@lockray/types";
+import type { CliWorkspaceReport, DependencyChange, Finding, ProjectInput } from "@lockray/types";
 import { discoverProjects } from "../change-detection/discovery.js";
 import { makeGitShow } from "../change-detection/git-show.js";
 import { createPacoteFetcher } from "../tarball/pacote-fetcher.js";
@@ -15,13 +15,10 @@ interface CheckOptions {
   format: string;
 }
 
-export interface WorkspaceResult {
-  workspace: string;
-  ecosystem: "npm" | "pypi";
-  parseOutcome: ProjectInput["parseOutcome"];
-  changes: DependencyChange[];
-  findings: Finding[];
-}
+// The shared shape lives in @lockray/types as CliWorkspaceReport; alias
+// here to keep the existing `WorkspaceResult` identifier stable for any
+// downstream importers.
+export type WorkspaceResult = CliWorkspaceReport;
 
 export function buildCheckCommand(): Command {
   const cmd = new Command("check");

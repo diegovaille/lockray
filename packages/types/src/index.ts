@@ -118,3 +118,28 @@ export class LockrayError extends Error {
     this.name = "LockrayError";
   }
 }
+
+/**
+ * Shape of the JSON emitted by `lockray check --format json`.
+ * Kept in @lockray/types so the CLI, the Action, and external tooling
+ * all refer to one definition. Changes to this shape are breaking.
+ */
+export interface CliWorkspaceReport {
+  workspace: string;
+  ecosystem: Ecosystem;
+  parseOutcome: ParseOutcome;
+  changes: DependencyChange[];
+  findings: Finding[];
+}
+
+export interface CliReport {
+  base: string;
+  head: string;
+  workspaces: CliWorkspaceReport[];
+  /** Flattened changes across all workspaces. */
+  changes: DependencyChange[];
+  /** Flattened findings across all workspaces. */
+  findings: Finding[];
+  /** True if any finding carries hardFail === true. */
+  blocked: boolean;
+}
