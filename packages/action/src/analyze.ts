@@ -33,9 +33,16 @@ export interface AnalyzeDeps {
 }
 
 /**
- * The Action invokes the lockray CLI binary directly. The CLI must be on
- * PATH (e.g. via `npm link` in the dogfood workflow, or installed globally).
- * For on-demand resolution via npx, callers may override exec in deps.
+ * The Action invokes the `lockray` CLI binary directly. The binary must
+ * resolve on PATH. In the dogfood workflow (Task 9) this is satisfied by
+ * `npm link --workspace @lockray/cli`. External consumers must add an
+ * install or link step before the analyze job, or wait for the M4
+ * bundled-CLI variant that ships the CLI inside the Action bundle.
+ *
+ * To switch to on-demand npx resolution, update main.ts to pass "npx"
+ * as the command with ["--yes", "@lockray/cli"] as the leading args.
+ * The `deps` parameter is intended for test overrides, not runtime
+ * consumer overrides.
  */
 const DEFAULT_LOCKRAY_CMD = "lockray";
 const DEFAULT_LOCKRAY_ARGS: string[] = [];
