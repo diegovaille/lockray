@@ -136,10 +136,10 @@ export interface CliReport {
   base: string;
   head: string;
   workspaces: CliWorkspaceReport[];
-  /** Flattened changes across all workspaces. */
+  /** Flattened changes across all workspaces (equals workspaces.flatMap(w => w.changes)). */
   changes: DependencyChange[];
-  /** Flattened findings across all workspaces. */
+  /** Flattened findings across all workspaces (equals workspaces.flatMap(w => w.findings)). */
   findings: Finding[];
-  /** True if any finding carries hardFail === true. */
+  /** True if any finding carries hardFail === true. Extended in M4 to include score-based blocking. */
   blocked: boolean;
 }

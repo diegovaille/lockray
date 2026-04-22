@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { NpmAnalyzer } from "@lockray/analyzer-npm";
-import type { CliWorkspaceReport, DependencyChange, Finding, ProjectInput } from "@lockray/types";
+import type { CliWorkspaceReport, Finding } from "@lockray/types";
 import { discoverProjects } from "../change-detection/discovery.js";
 import { makeGitShow } from "../change-detection/git-show.js";
 import { createPacoteFetcher } from "../tarball/pacote-fetcher.js";
