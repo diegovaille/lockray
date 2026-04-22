@@ -33,7 +33,7 @@ const writeFn: WriteFileFn = async (path, content) => {
   await writeFile(path, content, "utf8");
 };
 
-function makeArtifactClient(): { uploadArtifact: UploadArtifactFn } {
+function makeUploadClient(): { uploadArtifact: UploadArtifactFn } {
   const client = new artifact.DefaultArtifactClient();
   return {
     uploadArtifact: async (name, files, rootDirectory) => {
@@ -45,11 +45,18 @@ function makeArtifactClient(): { uploadArtifact: UploadArtifactFn } {
 
 async function runAnalyzeMode(inputs: ActionInputs): Promise<number> {
   const ctx = github.context;
-  const prNumber = ctx.payload.pull_request?.number ?? inputs.prNumber ?? 0;
+  const prNumberCandidate =
+    ctx.payload.pull_request?.number ?? inputs.prNumber ?? null;
+  if (prNumberCandidate === null) {
+    throw new Error(
+      'analyze mode could not determine a PR number: not a pull_request event and no "pr-number" input provided',
+    );
+  }
+  const prNumber = prNumberCandidate;
   const headSha = ctx.payload.pull_request?.head?.sha ?? ctx.sha;
   const runId = ctx.runId;
 
-  const { uploadArtifact } = makeArtifactClient();
+  const { uploadArtifact } = makeUploadClient();
   const { report, exitCode } = await runAnalyzeJob(inputs, {
     exec: execFn,
     writeFile: writeFn,
@@ -82,10 +89,14 @@ async function runReportMode(inputs: ActionInputs): Promise<number> {
 
   // List artifacts for the triggering workflow_run, locate the report + metadata.
   const { owner, repo } = github.context.repo;
+  // per_page: 100 is the GitHub API max. For monorepos that upload many
+  // artifacts per run, this avoids losing the LockRay artifacts off page 1.
+  // TODO(M4): paginate if any consumer routinely exceeds 100 artifacts/run.
   const runArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
     owner,
     repo,
     run_id: inputs.workflowRunId,
+    per_page: 100,
   });
   const reportArtifact = runArtifacts.data.artifacts.find((a) => a.name === inputs.artifactName);
   const metadataArtifact = runArtifacts.data.artifacts.find((a) => a.name === `${inputs.artifactName}-metadata`);
@@ -94,8 +105,24 @@ async function runReportMode(inputs: ActionInputs): Promise<number> {
   }
 
   const downloadDir = process.env.RUNNER_TEMP ?? "/tmp";
-  await client.downloadArtifact(reportArtifact.id, { path: downloadDir });
-  await client.downloadArtifact(metadataArtifact.id, { path: downloadDir });
+  // downloadArtifact needs findBy when the target lives in a different
+  // workflow run from the one currently executing (our report job runs on
+  // workflow_run, which is a different run than the analyze job that
+  // produced the artifacts). Without findBy, the client falls back to the
+  // internal Twirp API scoped to the current run and fails to find the
+  // cross-run artifact.
+  const findBy = {
+    token: inputs.githubToken,
+    workflowRunId: inputs.workflowRunId,
+    repositoryOwner: owner,
+    repositoryName: repo,
+  };
+  // @actions/artifact v2 extracts single-file artifacts flat into `path`,
+  // so readFile(join(downloadDir, "lockray-*.json")) below is correct.
+  // If the library's extraction layout changes, these readFile paths will
+  // need to pick up a subdirectory.
+  await client.downloadArtifact(reportArtifact.id, { path: downloadDir, findBy });
+  await client.downloadArtifact(metadataArtifact.id, { path: downloadDir, findBy });
 
   const report = JSON.parse(
     await readFile(join(downloadDir, "lockray-report.json"), "utf8"),
