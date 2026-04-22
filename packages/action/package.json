@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
-  "types": "./dist/src/types.d.ts",
+  "types": "./dist/types.d.ts",
   "files": ["dist", "action.yml"],
   "scripts": {
     "build": "tsc -b",
