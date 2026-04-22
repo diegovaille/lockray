@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/analyzer-npm" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "packages/action" }
   ]
 }
