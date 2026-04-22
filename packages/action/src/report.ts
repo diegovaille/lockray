@@ -47,7 +47,7 @@ export interface OctokitLike {
         name: string;
         head_sha: string;
         status: "completed";
-        conclusion: "success" | "failure" | "neutral";
+        conclusion: "success" | "failure";
         output?: { title: string; summary: string };
       }) => Promise<{ data: { id: number } }>;
     };
@@ -65,6 +65,9 @@ export async function runReportJob(
   const body = `${COMMENT_MARKER}\n${renderMarkdown(params.report)}`;
 
   // Upsert the PR comment.
+  // TODO(M4): paginate past 100 comments via octokit.paginate() or a manual page
+  // loop. PRs with more than 100 comments risk the existing LockRay comment
+  // being missed here, which would produce a duplicate comment on the next run.
   const existing = await deps.octokit.rest.issues.listComments({
     owner: params.owner,
     repo: params.repo,
@@ -72,7 +75,7 @@ export async function runReportJob(
     per_page: 100,
   });
   const existingLockray = existing.data.find(
-    (c) => typeof c.body === "string" && c.body.includes(COMMENT_MARKER),
+    (c) => typeof c.body === "string" && c.body.startsWith(COMMENT_MARKER),
   );
   if (existingLockray) {
     await deps.octokit.rest.issues.updateComment({

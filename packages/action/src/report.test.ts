@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { runReportJob } from "./report.js";
+import type { OctokitLike } from "./report.js";
 import type { CliReport } from "@lockray/types";
 
 function stubReport(blocked: boolean): CliReport {
@@ -59,7 +60,7 @@ describe("runReportJob", () => {
         failOnRisk: true,
         report: stubReport(false),
       },
-      { octokit: octokit as unknown as never },
+      { octokit: octokit as unknown as OctokitLike },
     );
     expect(octokit.rest.issues.createComment).toHaveBeenCalledTimes(1);
     expect(octokit.rest.issues.updateComment).not.toHaveBeenCalled();
@@ -79,7 +80,7 @@ describe("runReportJob", () => {
         failOnRisk: true,
         report: stubReport(false),
       },
-      { octokit: octokit as unknown as never },
+      { octokit: octokit as unknown as OctokitLike },
     );
     expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
     expect(octokit.rest.issues.updateComment).toHaveBeenCalledWith(
@@ -98,9 +99,58 @@ describe("runReportJob", () => {
         failOnRisk: true,
         report: stubReport(true),
       },
-      { octokit: octokit as unknown as never },
+      { octokit: octokit as unknown as OctokitLike },
     );
     const checkCall = octokit.rest.checks.create.mock.calls[0][0] as { conclusion: string };
     expect(checkCall.conclusion).toBe("failure");
+  });
+
+  it("sets title to 'N finding(s) to review' when there are non-blocking findings", async () => {
+    const octokit = newOctokit(null);
+    const report = stubReport(false);
+    report.workspaces[0].findings.push({
+      code: "NEW_POSTINSTALL_SCRIPT",
+      title: "New install hook postinstall in pkg@1.0.1",
+      severity: "critical",
+      confidence: 0.9,
+      evidence: [],
+      ecosystem: "npm",
+      packageName: "pkg",
+      packageVersion: "1.0.1",
+      direct: true,
+      escalated: false,
+    });
+    await runReportJob(
+      {
+        owner: "acme",
+        repo: "widget",
+        prNumber: 7,
+        headSha: "deadbeef",
+        failOnRisk: true,
+        report,
+      },
+      { octokit: octokit as unknown as OctokitLike },
+    );
+    const checkCall = octokit.rest.checks.create.mock.calls[0][0] as { conclusion: string; output: { title: string } };
+    expect(checkCall.conclusion).toBe("success");
+    expect(checkCall.output.title).toMatch(/1 finding\(s\) to review/);
+  });
+
+  it("status check is success when blocked but fail-on-risk is false", async () => {
+    const octokit = newOctokit(null);
+    await runReportJob(
+      {
+        owner: "acme",
+        repo: "widget",
+        prNumber: 7,
+        headSha: "deadbeef",
+        failOnRisk: false,
+        report: stubReport(true),
+      },
+      { octokit: octokit as unknown as OctokitLike },
+    );
+    const checkCall = octokit.rest.checks.create.mock.calls[0][0] as { conclusion: string; output: { title: string } };
+    expect(checkCall.conclusion).toBe("success");
+    expect(checkCall.output.title).toMatch(/hard-fail rule fired/);
   });
 });
