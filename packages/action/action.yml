@@ -1,0 +1,54 @@
+name: "LockRay"
+description: "Analyze dependency-update PRs for supply-chain risk. Posts findings as a PR comment and sets a blocking status check."
+author: "LockRay contributors"
+branding:
+  icon: "lock"
+  color: "purple"
+
+inputs:
+  mode:
+    description: 'Either "analyze" (runs on pull_request) or "report" (runs on workflow_run).'
+    required: false
+    default: "analyze"
+  workdir:
+    description: "Directory to run the CLI from."
+    required: false
+    default: "."
+  base:
+    description: "Base git ref to diff from. Defaults to the PR target."
+    required: false
+    default: ""
+  head:
+    description: "Head git ref to diff to. Defaults to the PR branch head."
+    required: false
+    default: ""
+  fail-on-risk:
+    description: "If true, set the job status to failure when LockRay blocks."
+    required: false
+    default: "true"
+  artifact-name:
+    description: "Name of the uploaded/downloaded artifact (must match between analyze and report jobs)."
+    required: false
+    default: "lockray-report"
+  workflow-run-id:
+    description: "(report mode) The workflow_run id that produced the artifact."
+    required: false
+    default: ""
+  pr-number:
+    description: "(report mode) PR number override when it cannot be inferred."
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token with pull-requests:write and checks:write. Required in report mode."
+    required: false
+    default: ""
+
+outputs:
+  blocked:
+    description: "true when any hard-fail rule fired"
+  finding-count:
+    description: "total number of findings across all workspaces"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
