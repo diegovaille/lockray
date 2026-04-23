@@ -93,7 +93,12 @@ export async function runAnalyzeJob(
   await deps.writeFile(reportPath, JSON.stringify(report, null, 2));
   await deps.uploadArtifact(inputs.artifactName, [reportPath], inputs.workdir);
 
-  // Metadata blob so the report job can find the PR without re-parsing the event context.
+  // lockray-metadata.json is diagnostic-only. The privileged report job
+  // MUST NOT use its contents to decide which PR to comment on, which
+  // commit to status-check, or whether to block — those identities and
+  // policies are derived by the report job from the trusted workflow_run
+  // event payload and its own action input. Metadata is retained as an
+  // audit trail and for consistency warnings only.
   const metadataPath = join(inputs.workdir, "lockray-metadata.json");
   const metadata = {
     prNumber: deps.prNumber,

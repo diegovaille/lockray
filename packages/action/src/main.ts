@@ -9,6 +9,73 @@ import { runAnalyzeJob, type ExecFn, type UploadArtifactFn, type WriteFileFn } f
 import { runReportJob } from "./report.js";
 import type { ActionInputs } from "./types.js";
 
+export interface TrustedReportIdentity {
+  prNumber: number;
+  headSha: string;
+  failOnRisk: boolean;
+}
+
+/**
+ * Derive the trusted report identity from the workflow_run event payload and
+ * the report job's own action inputs. The payload is received directly from
+ * GitHub by the privileged runner and cannot be tampered with by PR code.
+ *
+ * inputsPrNumber is used only as a fallback when workflow_run.pull_requests is
+ * empty (e.g. a manually-triggered run); it is still a privileged caller-supplied
+ * value, not artifact data. failOnRisk ALWAYS comes from the report job's own
+ * action input — never from the analyze-job artifact.
+ */
+export function resolveTrustedReportIdentity(
+  workflowRunPayload: unknown,
+  inputsPrNumber: number | null,
+  inputsFailOnRisk: boolean,
+): TrustedReportIdentity {
+  const p = workflowRunPayload as
+    | { pull_requests?: Array<{ number: number }>; head_sha?: string }
+    | undefined;
+  const prNumber = p?.pull_requests?.[0]?.number ?? inputsPrNumber ?? null;
+  const headSha = p?.head_sha ?? null;
+  if (prNumber === null) {
+    throw new Error(
+      "report mode could not resolve a trusted PR number from workflow_run.pull_requests",
+    );
+  }
+  if (headSha === null) {
+    throw new Error(
+      "report mode could not resolve trusted head_sha from workflow_run payload",
+    );
+  }
+  return { prNumber, headSha, failOnRisk: inputsFailOnRisk };
+}
+
+export interface MetadataConsistencyWarning {
+  field: "prNumber" | "headSha" | "failOnRisk";
+  metadataValue: unknown;
+  trustedValue: unknown;
+}
+
+/**
+ * Compare analyze-job metadata against the trusted identity and return a list
+ * of discrepancies. Used only for logging — callers must never use metadata
+ * values to override the trusted identity.
+ */
+export function compareMetadataAgainstTrusted(
+  metadata: { prNumber?: unknown; headSha?: unknown; failOnRisk?: unknown },
+  trusted: TrustedReportIdentity,
+): MetadataConsistencyWarning[] {
+  const warnings: MetadataConsistencyWarning[] = [];
+  if (metadata.prNumber !== undefined && metadata.prNumber !== trusted.prNumber) {
+    warnings.push({ field: "prNumber", metadataValue: metadata.prNumber, trustedValue: trusted.prNumber });
+  }
+  if (metadata.headSha !== undefined && metadata.headSha !== trusted.headSha) {
+    warnings.push({ field: "headSha", metadataValue: metadata.headSha, trustedValue: trusted.headSha });
+  }
+  if (metadata.failOnRisk !== undefined && metadata.failOnRisk !== trusted.failOnRisk) {
+    warnings.push({ field: "failOnRisk", metadataValue: metadata.failOnRisk, trustedValue: trusted.failOnRisk });
+  }
+  return warnings;
+}
+
 function readInputs(): ActionInputs {
   const mode = core.getInput("mode") || "analyze";
   if (mode !== "analyze" && mode !== "report") {
@@ -84,11 +151,22 @@ async function runReportMode(inputs: ActionInputs): Promise<number> {
   if (!inputs.githubToken) throw new Error("report mode requires github-token");
   if (!inputs.workflowRunId) throw new Error("report mode requires workflow-run-id");
 
+  const { owner, repo } = github.context.repo;
+
+  // TRUSTED identity, derived from the workflow_run event payload the
+  // privileged runner received directly from GitHub. We MUST NOT trust
+  // prNumber/headSha from the uploaded metadata.json — that file is
+  // produced by the unprivileged analyze job, which a PR can influence.
+  const trustedIdentity = resolveTrustedReportIdentity(
+    github.context.payload.workflow_run,
+    inputs.prNumber,
+    inputs.failOnRisk,
+  );
+
   const client = new artifact.DefaultArtifactClient();
   const octokit = github.getOctokit(inputs.githubToken);
 
   // List artifacts for the triggering workflow_run, locate the report + metadata.
-  const { owner, repo } = github.context.repo;
   // per_page: 100 is the GitHub API max. For monorepos that upload many
   // artifacts per run, this avoids losing the LockRay artifacts off page 1.
   // TODO(M4): paginate if any consumer routinely exceeds 100 artifacts/run.
@@ -127,17 +205,37 @@ async function runReportMode(inputs: ActionInputs): Promise<number> {
   const report = JSON.parse(
     await readFile(join(downloadDir, "lockray-report.json"), "utf8"),
   ) as CliReport;
-  const metadata = JSON.parse(
-    await readFile(join(downloadDir, "lockray-metadata.json"), "utf8"),
-  ) as { prNumber: number; runId: number; headSha: string; failOnRisk: boolean };
+
+  // Metadata is still loaded for diagnostic purposes only. Its values
+  // never reach runReportJob; they're only used to log a warning if they
+  // diverge from the trusted values, so operators can notice a forgery attempt.
+  try {
+    const metadataRaw = await readFile(join(downloadDir, "lockray-metadata.json"), "utf8");
+    const metadata = JSON.parse(metadataRaw) as {
+      prNumber?: unknown;
+      headSha?: unknown;
+      failOnRisk?: unknown;
+    };
+    const discrepancies = compareMetadataAgainstTrusted(metadata, trustedIdentity);
+    for (const w of discrepancies) {
+      core.warning(
+        `analyze-job metadata ${w.field} (${String(w.metadataValue)}) disagrees with trusted value (${String(w.trustedValue)}) — using trusted value`,
+      );
+    }
+    if (discrepancies.length === 0) {
+      core.info("metadata consistency check passed — analyze-job metadata matches trusted workflow_run payload");
+    }
+  } catch (err) {
+    core.info(`metadata consistency check skipped: ${(err as Error).message}`);
+  }
 
   await runReportJob(
     {
       owner,
       repo,
-      prNumber: metadata.prNumber,
-      headSha: metadata.headSha,
-      failOnRisk: metadata.failOnRisk,
+      prNumber: trustedIdentity.prNumber,
+      headSha: trustedIdentity.headSha,
+      failOnRisk: trustedIdentity.failOnRisk,
       report,
     },
     { octokit },
@@ -156,4 +254,9 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+// Guard prevents main() from auto-executing when the module is imported by
+// the test suite (vitest sets VITEST=true). In production the Action runner
+// never sets VITEST, so the entry-point fires normally.
+if (!process.env["VITEST"]) {
+  void main();
+}
