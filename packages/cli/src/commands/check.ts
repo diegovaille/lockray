@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { NpmAnalyzer } from "@lockray/analyzer-npm";
-import type { CliWorkspaceReport, Finding } from "@lockray/types";
+import type { CliWorkspaceReport, Finding, PrReport } from "@lockray/types";
+import { score } from "@lockray/scoring";
 import { discoverProjects } from "../change-detection/discovery.js";
 import { makeGitShow } from "../change-detection/git-show.js";
 import { createPacoteFetcher } from "../tarball/pacote-fetcher.js";
@@ -76,15 +77,24 @@ export function buildCheckCommand(): Command {
 
       const allChanges = workspaces.flatMap((w) => w.changes);
       const allFindings = workspaces.flatMap((w) => w.findings);
-      const blocked = allFindings.some((f) => f.hardFail === true);
+
+      const prReport = score({
+        base: opts.base,
+        head: opts.head,
+        findings: allFindings,
+        workspaces,
+        totalChangedPackages: allChanges.length,
+      });
+      // Backwards-compatible view for v0.2.x consumers.
+      const blocked = prReport.verdict === "block";
 
       if (opts.format === "json") {
         process.stdout.write(
           JSON.stringify(
             {
-              base: opts.base,
-              head: opts.head,
-              workspaces,
+              ...prReport,
+              // v0.2 backwards-compat views — drop in v1.0 after
+              // downstream consumers migrate to verdict + packages.
               changes: allChanges,
               findings: allFindings,
               blocked,
@@ -94,7 +104,7 @@ export function buildCheckCommand(): Command {
           ) + "\n",
         );
       } else {
-        renderPretty(opts.base, opts.head, workspaces, blocked);
+        renderPretty(opts.base, opts.head, workspaces, prReport);
       }
     });
   return cmd;
@@ -108,10 +118,9 @@ function renderPretty(
   base: string,
   head: string,
   workspaces: WorkspaceResult[],
-  blocked: boolean,
+  prReport: PrReport,
 ): void {
   const out = process.stdout;
-  const totalFindings = workspaces.reduce((n, w) => n + w.findings.length, 0);
   const unanalyzedCount = workspaces.filter(
     (w) =>
       w.parseOutcome === "missing" ||
@@ -120,17 +129,21 @@ function renderPretty(
   ).length;
   out.write(`🔍 LockRay — dependency risk report\n`);
   out.write(`Base: ${base}  Head: ${head}\n\n`);
-  if (blocked) {
-    out.write(`Verdict: ❌ BLOCKED — at least one hard-fail rule fired\n\n`);
-  } else if (totalFindings > 0) {
-    out.write(`Verdict: ⚠ review findings below\n\n`);
+
+  if (prReport.verdict === "block") {
+    out.write(`Verdict: ❌ BLOCKED — score ${prReport.prScore}/100\n`);
+  } else if (prReport.verdict === "review") {
+    out.write(`Verdict: ⚠ review — score ${prReport.prScore}/100\n`);
   } else if (unanalyzedCount > 0) {
     out.write(
-      `Verdict: ⚠ incomplete — ${unanalyzedCount} workspace(s) not analyzed; see notes below\n\n`,
+      `Verdict: ⚠ incomplete — ${unanalyzedCount} workspace(s) not analyzed; see notes below\n`,
     );
   } else {
-    out.write(`Verdict: ✅ no high-confidence risk signals found\n\n`);
+    out.write(`Verdict: ✅ no high-confidence risk signals found (score 0/100)\n`);
   }
+  out.write(
+    `${prReport.flaggedPackageCount} flagged · ${prReport.blockCount} block · ${prReport.reviewCount} review · risk density ${prReport.riskDensity}\n\n`,
+  );
 
   for (const ws of workspaces) {
     out.write(`Workspace: ${ws.workspace} (${ws.ecosystem}, ${ws.parseOutcome})\n`);

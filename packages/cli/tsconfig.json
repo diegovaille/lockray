@@ -8,6 +8,7 @@
   "exclude": ["**/*.test.ts"],
   "references": [
     { "path": "../types" },
-    { "path": "../analyzer-npm" }
+    { "path": "../analyzer-npm" },
+    { "path": "../scoring" }
   ]
 }
