@@ -143,3 +143,57 @@ export interface CliReport {
   /** True if any finding carries hardFail === true. Extended in M4 to include score-based blocking. */
   blocked: boolean;
 }
+
+/**
+ * User-facing verdict per spec §9. Maps one-to-one to the score thresholds
+ * defined in @lockray/scoring (0-29 safe, 30-59 review, 60-100 block) —
+ * but the verdict is itself the authoritative consumer-facing value;
+ * downstream code should branch on `verdict`, not on the numeric score.
+ */
+export type Verdict = "safe" | "review" | "block";
+
+/**
+ * Per-package aggregate. Produced by @lockray/scoring from the findings
+ * attached to a single (ecosystem, name) change. Stable external contract —
+ * additions are non-breaking, removals or renames require a major bump.
+ */
+export interface PackageReport {
+  ecosystem: Ecosystem;
+  packageName: string;
+  packageVersion: string;
+  direct: boolean;
+  /** Capped at 100. When any finding has hardFail=true, score=100 regardless. */
+  score: number;
+  verdict: Verdict;
+  /** True when any of this package's findings carried hardFail=true. */
+  hardFail: boolean;
+  findings: Finding[];
+}
+
+/**
+ * Top-level report shape emitted by `lockray check --format json`'s
+ * future evolution. Replaces the ad-hoc `CliReport.blocked` boolean
+ * consumers used in v0.2.x, while keeping that field as a backwards-
+ * compatible view (`blocked === (verdict === "block")`).
+ */
+export interface PrReport {
+  base: string;
+  head: string;
+  /** max(PackageReport.score) across all packages; drives the verdict. */
+  prScore: number;
+  verdict: Verdict;
+  /** Packages with verdict !== "safe". */
+  flaggedPackageCount: number;
+  /** Packages with verdict === "review". */
+  reviewCount: number;
+  /** Packages with verdict === "block". */
+  blockCount: number;
+  /** Packages with hardFail=true. */
+  hardFailCount: number;
+  /** flaggedPackageCount / max(1, totalChangedPackages). 0–1. */
+  riskDensity: number;
+  /** Top 3 packages by score, descending. */
+  topRisks: PackageReport[];
+  packages: PackageReport[];
+  workspaces: CliWorkspaceReport[];
+}
