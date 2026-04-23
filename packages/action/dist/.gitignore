@@ -1,5 +1,0 @@
-# ncc emits TypeScript declaration files alongside the bundle.
-# These are not needed at runtime and must not be committed.
-*.d.ts
-*.d.ts.map
-*.js.map
