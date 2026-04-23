@@ -8,7 +8,7 @@
   "files": ["dist", "action.yml"],
   "scripts": {
     "build": "tsc -b",
-    "bundle": "ncc build src/main.ts -o dist --source-map --license licenses.txt",
+    "bundle": "rm -rf dist && ncc build src/main.ts -o dist --license licenses.txt",
     "clean": "tsc -b --clean && rm -rf dist"
   },
   "dependencies": {
