@@ -192,8 +192,8 @@ export interface PrReport {
   hardFailCount: number;
   /** flaggedPackageCount / max(1, totalChangedPackages). 0–1. */
   riskDensity: number;
-  /** Top 3 packages by score, descending. */
-  topRisks: PackageReport[];
-  packages: PackageReport[];
-  workspaces: CliWorkspaceReport[];
+  /** Top 3 flagged packages by score, descending. */
+  topRisks: readonly PackageReport[];
+  packages: readonly PackageReport[];
+  workspaces: readonly CliWorkspaceReport[];
 }

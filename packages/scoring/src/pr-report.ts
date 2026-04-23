@@ -1,11 +1,5 @@
-import type { CliWorkspaceReport, PackageReport, PrReport, Verdict } from "@lockray/types";
-import { DEFAULT_THRESHOLDS } from "./weights.js";
-
-function verdictFor(score: number): Verdict {
-  if (score >= DEFAULT_THRESHOLDS.block) return "block";
-  if (score >= DEFAULT_THRESHOLDS.review) return "review";
-  return "safe";
-}
+import type { CliWorkspaceReport, PackageReport, PrReport } from "@lockray/types";
+import { verdictFor } from "./weights.js";
 
 export interface PrReportInput {
   base: string;

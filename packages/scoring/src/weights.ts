@@ -1,4 +1,4 @@
-import type { Severity } from "@lockray/types";
+import type { Severity, Verdict } from "@lockray/types";
 
 /**
  * Per-severity weight contribution (before confidence / location / diminishing).
@@ -70,3 +70,17 @@ export const DEFAULT_COMPOUND_BONUSES: readonly CompoundBonus[] = [
   { codes: ["NEW_POSTINSTALL_SCRIPT", "OBFUSCATED_CODE"], bonus: 25 },
   { codes: ["MAINTAINER_CHANGED", "NEW_NETWORK_CALL"], bonus: 15 },
 ];
+
+/**
+ * Resolve a numeric score to a Verdict per the supplied thresholds.
+ * Uses DEFAULT_THRESHOLDS when no override is given. Shared helper so
+ * package-level and PR-level verdict selection stay consistent.
+ */
+export function verdictFor(
+  score: number,
+  thresholds: Thresholds = DEFAULT_THRESHOLDS,
+): Verdict {
+  if (score >= thresholds.block) return "block";
+  if (score >= thresholds.review) return "review";
+  return "safe";
+}

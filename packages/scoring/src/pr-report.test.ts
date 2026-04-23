@@ -72,4 +72,40 @@ describe("buildPrReport", () => {
     const r = buildPrReport({ base: BASE, head: HEAD, packages: pkgs, workspaces: NO_WORKSPACES, totalChangedPackages: 5 });
     expect(r.topRisks.map((p) => p.packageName)).toEqual(["b", "d", "c"]);
   });
+
+  it("verdict is 'block' at the exact threshold prScore=60", () => {
+    const r = buildPrReport({
+      base: BASE,
+      head: HEAD,
+      packages: [pkg({ score: 60, verdict: "block" })],
+      workspaces: NO_WORKSPACES,
+      totalChangedPackages: 1,
+    });
+    expect(r.prScore).toBe(60);
+    expect(r.verdict).toBe("block");
+  });
+
+  it("verdict is 'review' at the exact threshold prScore=30", () => {
+    const r = buildPrReport({
+      base: BASE,
+      head: HEAD,
+      packages: [pkg({ score: 30, verdict: "review" })],
+      workspaces: NO_WORKSPACES,
+      totalChangedPackages: 1,
+    });
+    expect(r.prScore).toBe(30);
+    expect(r.verdict).toBe("review");
+  });
+
+  it("verdict is 'safe' just below the review threshold (prScore=29)", () => {
+    const r = buildPrReport({
+      base: BASE,
+      head: HEAD,
+      packages: [pkg({ score: 29, verdict: "safe" })],
+      workspaces: NO_WORKSPACES,
+      totalChangedPackages: 1,
+    });
+    expect(r.prScore).toBe(29);
+    expect(r.verdict).toBe("safe");
+  });
 });

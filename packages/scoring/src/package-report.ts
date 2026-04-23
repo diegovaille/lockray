@@ -1,5 +1,5 @@
-import type { Ecosystem, Finding, PackageReport, Verdict } from "@lockray/types";
-import { DEFAULT_THRESHOLDS } from "./weights.js";
+import type { Ecosystem, Finding, PackageReport } from "@lockray/types";
+import { verdictFor } from "./weights.js";
 import { contributionFor } from "./contribution.js";
 import { compoundBonusFor } from "./compound.js";
 
@@ -8,12 +8,6 @@ export interface PackageKey {
   packageName: string;
   packageVersion: string;
   direct: boolean;
-}
-
-function verdictFor(score: number): Verdict {
-  if (score >= DEFAULT_THRESHOLDS.block) return "block";
-  if (score >= DEFAULT_THRESHOLDS.review) return "review";
-  return "safe";
 }
 
 /**
