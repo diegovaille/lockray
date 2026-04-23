@@ -167,7 +167,7 @@ export interface PackageReport {
   verdict: Verdict;
   /** True when any of this package's findings carried hardFail=true. */
   hardFail: boolean;
-  findings: Finding[];
+  findings: readonly Finding[];
 }
 
 /**
