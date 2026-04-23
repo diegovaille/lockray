@@ -112,18 +112,39 @@ function renderPretty(
 ): void {
   const out = process.stdout;
   const totalFindings = workspaces.reduce((n, w) => n + w.findings.length, 0);
+  const unanalyzedCount = workspaces.filter(
+    (w) =>
+      w.parseOutcome === "missing" ||
+      w.parseOutcome === "invalid" ||
+      w.parseOutcome === "unsupported",
+  ).length;
   out.write(`🔍 LockRay — dependency risk report\n`);
   out.write(`Base: ${base}  Head: ${head}\n\n`);
   if (blocked) {
     out.write(`Verdict: ❌ BLOCKED — at least one hard-fail rule fired\n\n`);
   } else if (totalFindings > 0) {
     out.write(`Verdict: ⚠ review findings below\n\n`);
+  } else if (unanalyzedCount > 0) {
+    out.write(
+      `Verdict: ⚠ incomplete — ${unanalyzedCount} workspace(s) not analyzed; see notes below\n\n`,
+    );
   } else {
     out.write(`Verdict: ✅ no high-confidence risk signals found\n\n`);
   }
 
   for (const ws of workspaces) {
     out.write(`Workspace: ${ws.workspace} (${ws.ecosystem}, ${ws.parseOutcome})\n`);
+    if (
+      ws.parseOutcome === "missing" ||
+      ws.parseOutcome === "invalid" ||
+      ws.parseOutcome === "unsupported"
+    ) {
+      // Spec §15: never imply safety for inputs we didn't actually analyze.
+      out.write(
+        `  workspace not analyzed (parse outcome: ${ws.parseOutcome})\n\n`,
+      );
+      continue;
+    }
     if (ws.changes.length === 0) {
       out.write(`  no dependency changes detected\n\n`);
       continue;
