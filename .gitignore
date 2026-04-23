@@ -2,6 +2,11 @@ node_modules/
 dist/
 !packages/action/dist/
 !packages/action/dist/**
+# Action bundle: keep only the ncc outputs; TSC declaration artifacts
+# re-leak every bundle because `rm -rf dist` nukes any in-dir .gitignore.
+packages/action/dist/*.d.ts
+packages/action/dist/*.d.ts.map
+packages/action/dist/*.js.map
 *.log
 .DS_Store
 coverage/
