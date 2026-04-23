@@ -1,4 +1,10 @@
-import type { CliReport, DependencyChange, Finding } from "@lockray/types";
+import type {
+  DependencyChange,
+  Evidence,
+  Finding,
+  PackageReport,
+  PrReport,
+} from "@lockray/types";
 
 const DEFAULT_MAX_FINDINGS = 25;
 
@@ -61,33 +67,57 @@ function renderFinding(f: Finding): string {
   return lines.join("\n");
 }
 
-export function renderMarkdown(report: CliReport, opts: RenderOptions = {}): string {
+export function renderMarkdown(report: PrReport, opts: RenderOptions = {}): string {
   const maxFindings = opts.maxFindings ?? DEFAULT_MAX_FINDINGS;
-  const totalFindings = report.workspaces.reduce((n, w) => n + w.findings.length, 0);
+  const totalFindings = report.workspaces.reduce(
+    (n, w) => n + w.findings.length,
+    0,
+  );
 
   const header: string[] = [];
   header.push(`## 🔍 LockRay — Dependency Risk Report`);
   header.push(`Base: \`${report.base}\` · Head: \`${report.head}\``);
-  if (report.blocked) {
+  if (report.verdict === "block") {
     header.push(``);
-    header.push(`### ❌ BLOCKED — at least one hard-fail rule fired`);
-  } else if (totalFindings > 0) {
+    header.push(
+      `### ❌ BLOCKED — score ${report.prScore}/100, at least one hard-fail or block-level package`,
+    );
+  } else if (report.verdict === "review") {
     header.push(``);
-    header.push(`### ⚠ Review findings below`);
+    header.push(`### ⚠ Review findings below — score ${report.prScore}/100`);
   } else {
     header.push(``);
-    header.push(`### ✅ No high-confidence risk signals found`);
+    header.push(`### ✅ No high-confidence risk signals found (score ${report.prScore}/100)`);
   }
+  header.push(
+    `${report.flaggedPackageCount} flagged · ${report.blockCount} block · ${report.reviewCount} review · risk density ${report.riskDensity}`,
+  );
 
   const body: string[] = [];
+
+  if (report.topRisks.length > 0) {
+    body.push(``);
+    body.push(`### Top risks`);
+    for (const p of report.topRisks) {
+      body.push(
+        `- **${p.packageName}@${p.packageVersion}** — score ${p.score}/100, verdict \`${p.verdict}\`${p.hardFail ? " (hard-fail)" : ""}`,
+      );
+    }
+  }
+
   let remainingBudget = maxFindings;
 
   for (const ws of report.workspaces) {
     body.push(``);
-    body.push(`### Workspace \`${ws.workspace}\` (${ws.ecosystem}, ${ws.parseOutcome})`);
+    body.push(
+      `### Workspace \`${ws.workspace}\` (${ws.ecosystem}, ${ws.parseOutcome})`,
+    );
 
-    // Unanalyzable workspaces: do not imply clean analysis where none happened.
-    if (ws.parseOutcome === "missing" || ws.parseOutcome === "invalid" || ws.parseOutcome === "unsupported") {
+    if (
+      ws.parseOutcome === "missing" ||
+      ws.parseOutcome === "invalid" ||
+      ws.parseOutcome === "unsupported"
+    ) {
       body.push(`_Workspace not analyzed (parse outcome: ${ws.parseOutcome})._`);
       continue;
     }
@@ -123,7 +153,9 @@ export function renderMarkdown(report: CliReport, opts: RenderOptions = {}): str
   const omitted = totalFindings - Math.min(totalFindings, maxFindings);
   if (omitted > 0) {
     body.push(``);
-    body.push(`_${omitted} more findings omitted — see the full \`report.json\` artifact._`);
+    body.push(
+      `_${omitted} more findings omitted — see the full \`report.json\` artifact._`,
+    );
   }
 
   return [...header, ...body, ``].join("\n");

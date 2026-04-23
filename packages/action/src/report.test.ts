@@ -1,12 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { runReportJob } from "./report.js";
 import type { OctokitLike } from "./report.js";
-import type { CliReport } from "@lockray/types";
+import type { PrReport, Verdict } from "@lockray/types";
 
-function stubReport(blocked: boolean): CliReport {
+function stubReport(verdict: Verdict, prScore = 0, overrides: Partial<PrReport> = {}): PrReport {
   return {
     base: "aaa",
     head: "bbb",
+    prScore,
+    verdict,
+    flaggedPackageCount: verdict === "safe" ? 0 : 1,
+    reviewCount: verdict === "review" ? 1 : 0,
+    blockCount: verdict === "block" ? 1 : 0,
+    hardFailCount: 0,
+    riskDensity: 0,
+    topRisks: [],
+    packages: [],
     workspaces: [
       {
         workspace: "root",
@@ -16,9 +25,7 @@ function stubReport(blocked: boolean): CliReport {
         findings: [],
       },
     ],
-    changes: [],
-    findings: [],
-    blocked,
+    ...overrides,
   };
 }
 
@@ -58,7 +65,7 @@ describe("runReportJob", () => {
         prNumber: 7,
         headSha: "deadbeef",
         failOnRisk: true,
-        report: stubReport(false),
+        report: stubReport("safe", 0),
       },
       { octokit: octokit as unknown as OctokitLike },
     );
@@ -78,7 +85,7 @@ describe("runReportJob", () => {
         prNumber: 7,
         headSha: "deadbeef",
         failOnRisk: true,
-        report: stubReport(false),
+        report: stubReport("safe", 0),
       },
       { octokit: octokit as unknown as OctokitLike },
     );
@@ -97,7 +104,7 @@ describe("runReportJob", () => {
         prNumber: 7,
         headSha: "deadbeef",
         failOnRisk: true,
-        report: stubReport(true),
+        report: stubReport("block", 100),
       },
       { octokit: octokit as unknown as OctokitLike },
     );
@@ -105,21 +112,8 @@ describe("runReportJob", () => {
     expect(checkCall.conclusion).toBe("failure");
   });
 
-  it("sets title to 'N finding(s) to review' when there are non-blocking findings", async () => {
+  it("sets title with flagged count and score for review verdict", async () => {
     const octokit = newOctokit(null);
-    const report = stubReport(false);
-    report.workspaces[0].findings.push({
-      code: "NEW_POSTINSTALL_SCRIPT",
-      title: "New install hook postinstall in pkg@1.0.1",
-      severity: "critical",
-      confidence: 0.9,
-      evidence: [],
-      ecosystem: "npm",
-      packageName: "pkg",
-      packageVersion: "1.0.1",
-      direct: true,
-      escalated: false,
-    });
     await runReportJob(
       {
         owner: "acme",
@@ -127,13 +121,13 @@ describe("runReportJob", () => {
         prNumber: 7,
         headSha: "deadbeef",
         failOnRisk: true,
-        report,
+        report: stubReport("review", 45, { flaggedPackageCount: 1 }),
       },
       { octokit: octokit as unknown as OctokitLike },
     );
     const checkCall = octokit.rest.checks.create.mock.calls[0][0] as { conclusion: string; output: { title: string } };
     expect(checkCall.conclusion).toBe("success");
-    expect(checkCall.output.title).toMatch(/1 finding\(s\) to review/);
+    expect(checkCall.output.title).toMatch(/1 flagged package.+score 45/);
   });
 
   it("status check is success when blocked but fail-on-risk is false", async () => {
@@ -145,12 +139,12 @@ describe("runReportJob", () => {
         prNumber: 7,
         headSha: "deadbeef",
         failOnRisk: false,
-        report: stubReport(true),
+        report: stubReport("block", 100),
       },
       { octokit: octokit as unknown as OctokitLike },
     );
     const checkCall = octokit.rest.checks.create.mock.calls[0][0] as { conclusion: string; output: { title: string } };
     expect(checkCall.conclusion).toBe("success");
-    expect(checkCall.output.title).toMatch(/hard-fail rule fired/);
+    expect(checkCall.output.title).toMatch(/LockRay blocked: score 100/);
   });
 });

@@ -4,7 +4,7 @@ import * as exec from "@actions/exec";
 import * as artifact from "@actions/artifact";
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 import { runAnalyzeJob, type ExecFn, type UploadArtifactFn, type WriteFileFn } from "./analyze.js";
 import { runReportJob } from "./report.js";
 import type { ActionInputs } from "./types.js";
@@ -204,7 +204,7 @@ async function runReportMode(inputs: ActionInputs): Promise<number> {
 
   const report = JSON.parse(
     await readFile(join(downloadDir, "lockray-report.json"), "utf8"),
-  ) as CliReport;
+  ) as PrReport;
 
   // Metadata is still loaded for diagnostic purposes only. Its values
   // never reach runReportJob; they're only used to log a warning if they

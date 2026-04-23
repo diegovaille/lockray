@@ -1,4 +1,4 @@
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 import { renderMarkdown } from "./render-markdown.js";
 
 const COMMENT_MARKER = "<!-- lockray:report -->";
@@ -10,7 +10,7 @@ export interface ReportJobParams {
   prNumber: number;
   headSha: string;
   failOnRisk: boolean;
-  report: CliReport;
+  report: PrReport;
 }
 
 /**
@@ -94,13 +94,13 @@ export async function runReportJob(
   }
 
   // Status check.
-  const conclusion: "success" | "failure" =
-    params.report.blocked && params.failOnRisk ? "failure" : "success";
-  const totalFindings = params.report.workspaces.reduce((n, w) => n + w.findings.length, 0);
-  const title = params.report.blocked
-    ? "LockRay blocked: hard-fail rule fired"
-    : totalFindings > 0
-      ? `LockRay: ${totalFindings} finding(s) to review`
+  const shouldBlock = params.report.verdict === "block" && params.failOnRisk;
+  const conclusion: "success" | "failure" = shouldBlock ? "failure" : "success";
+  const title =
+    params.report.verdict === "block"
+      ? `LockRay blocked: score ${params.report.prScore}/100`
+      : params.report.verdict === "review"
+      ? `LockRay: ${params.report.flaggedPackageCount} flagged package(s) to review (score ${params.report.prScore}/100)`
       : "LockRay: no risk signals found";
 
   await deps.octokit.rest.checks.create({

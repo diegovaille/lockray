@@ -1,15 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { renderMarkdown } from "./render-markdown.js";
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 
-function baseReport(overrides: Partial<CliReport> = {}): CliReport {
+function baseReport(overrides: Partial<PrReport> = {}): PrReport {
   return {
     base: "abc1234",
     head: "def5678",
+    prScore: 0,
+    verdict: "safe",
+    flaggedPackageCount: 0,
+    reviewCount: 0,
+    blockCount: 0,
+    hardFailCount: 0,
+    riskDensity: 0,
+    topRisks: [],
+    packages: [],
     workspaces: [],
-    changes: [],
-    findings: [],
-    blocked: false,
     ...overrides,
   };
 }
@@ -24,9 +30,59 @@ describe("renderMarkdown", () => {
   });
 
   it("renders the blocked verdict with a clear header", () => {
+    const finding = {
+      code: "INTEGRITY_MISMATCH",
+      title: "Integrity hash changed for left-pad@1.3.0 without version change",
+      severity: "critical" as const,
+      confidence: 1,
+      evidence: [
+        {
+          kind: "metadata" as const,
+          metadataField: "integrity",
+          oldValue: "sha512-OLD",
+          newValue: "sha512-NEW",
+          remediationHint: "Investigate whether the package was re-published with the same version.",
+        },
+      ],
+      ecosystem: "npm" as const,
+      packageName: "left-pad",
+      packageVersion: "1.3.0",
+      direct: true,
+      escalated: false,
+      hardFail: true,
+    };
+
     const md = renderMarkdown(
       baseReport({
-        blocked: true,
+        verdict: "block",
+        prScore: 100,
+        flaggedPackageCount: 1,
+        blockCount: 1,
+        hardFailCount: 1,
+        topRisks: [
+          {
+            ecosystem: "npm",
+            packageName: "left-pad",
+            packageVersion: "1.3.0",
+            direct: true,
+            score: 100,
+            verdict: "block",
+            hardFail: true,
+            findings: [finding],
+          },
+        ],
+        packages: [
+          {
+            ecosystem: "npm",
+            packageName: "left-pad",
+            packageVersion: "1.3.0",
+            direct: true,
+            score: 100,
+            verdict: "block",
+            hardFail: true,
+            findings: [finding],
+          },
+        ],
         workspaces: [
           {
             workspace: "root",
@@ -45,33 +101,9 @@ describe("renderMarkdown", () => {
                 sourceChanged: false,
               },
             ],
-            findings: [
-              {
-                code: "INTEGRITY_MISMATCH",
-                title: "Integrity hash changed for left-pad@1.3.0 without version change",
-                severity: "critical",
-                confidence: 1,
-                evidence: [
-                  {
-                    kind: "metadata",
-                    metadataField: "integrity",
-                    oldValue: "sha512-OLD",
-                    newValue: "sha512-NEW",
-                    remediationHint: "Investigate whether the package was re-published with the same version.",
-                  },
-                ],
-                ecosystem: "npm",
-                packageName: "left-pad",
-                packageVersion: "1.3.0",
-                direct: true,
-                escalated: false,
-                hardFail: true,
-              },
-            ],
+            findings: [finding],
           },
         ],
-        changes: [],
-        findings: [],
       }),
     );
 
@@ -84,29 +116,56 @@ describe("renderMarkdown", () => {
   });
 
   it("renders the review verdict when there are non-hard-fail findings", () => {
+    const finding = {
+      code: "NEW_POSTINSTALL_SCRIPT",
+      title: "New or modified install hook postinstall in pkg@1.0.1",
+      severity: "critical" as const,
+      confidence: 0.9,
+      evidence: [],
+      ecosystem: "npm" as const,
+      packageName: "pkg",
+      packageVersion: "1.0.1",
+      direct: true,
+      escalated: false,
+    };
+
     const md = renderMarkdown(
       baseReport({
-        blocked: false,
+        verdict: "review",
+        prScore: 45,
+        flaggedPackageCount: 1,
+        reviewCount: 1,
+        topRisks: [
+          {
+            ecosystem: "npm",
+            packageName: "pkg",
+            packageVersion: "1.0.1",
+            direct: true,
+            score: 45,
+            verdict: "review",
+            hardFail: false,
+            findings: [finding],
+          },
+        ],
+        packages: [
+          {
+            ecosystem: "npm",
+            packageName: "pkg",
+            packageVersion: "1.0.1",
+            direct: true,
+            score: 45,
+            verdict: "review",
+            hardFail: false,
+            findings: [finding],
+          },
+        ],
         workspaces: [
           {
             workspace: "root",
             ecosystem: "npm",
             parseOutcome: "fully-supported",
             changes: [],
-            findings: [
-              {
-                code: "NEW_POSTINSTALL_SCRIPT",
-                title: "New or modified install hook postinstall in pkg@1.0.1",
-                severity: "critical",
-                confidence: 0.9,
-                evidence: [],
-                ecosystem: "npm",
-                packageName: "pkg",
-                packageVersion: "1.0.1",
-                direct: true,
-                escalated: false,
-              },
-            ],
+            findings: [finding],
           },
         ],
       }),
@@ -116,26 +175,33 @@ describe("renderMarkdown", () => {
   });
 
   it("truncates the rendered body when many findings are present and adds a summary tail", () => {
-    const many: CliReport = baseReport({
-      blocked: true,
+    const findings = Array.from({ length: 40 }, (_, i) => ({
+      code: "CVE_VULNERABILITY",
+      title: `CVE ${i}`,
+      severity: "high" as const,
+      confidence: 0.95,
+      evidence: [],
+      ecosystem: "npm" as const,
+      packageName: "pkg",
+      packageVersion: `1.0.${i}`,
+      direct: true,
+      escalated: false,
+    }));
+
+    const many: PrReport = baseReport({
+      verdict: "block",
+      prScore: 100,
+      flaggedPackageCount: 40,
+      blockCount: 40,
+      topRisks: [],
+      packages: [],
       workspaces: [
         {
           workspace: "root",
           ecosystem: "npm",
           parseOutcome: "fully-supported",
           changes: [],
-          findings: Array.from({ length: 40 }, (_, i) => ({
-            code: "CVE_VULNERABILITY",
-            title: `CVE ${i}`,
-            severity: "high" as const,
-            confidence: 0.95,
-            evidence: [],
-            ecosystem: "npm" as const,
-            packageName: "pkg",
-            packageVersion: `1.0.${i}`,
-            direct: true,
-            escalated: false,
-          })),
+          findings,
         },
       ],
     });
@@ -149,38 +215,66 @@ describe("renderMarkdown", () => {
   });
 
   it("renders registry-kind evidence with before/after URLs", () => {
+    const finding = {
+      code: "NEW_DEPENDENCY_SOURCE",
+      title: "pkg@1.0.0 resolved to a new registry/URL",
+      severity: "critical" as const,
+      confidence: 1,
+      evidence: [
+        {
+          kind: "registry" as const,
+          registryUrl: "https://evil-mirror.example/pkg/-/pkg-1.0.0.tgz",
+          oldValue: "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz",
+          newValue: "https://evil-mirror.example/pkg/-/pkg-1.0.0.tgz",
+          remediationHint: "Confirm the new resolved source is expected and trusted.",
+        },
+      ],
+      ecosystem: "npm" as const,
+      packageName: "pkg",
+      packageVersion: "1.0.0",
+      direct: true,
+      escalated: false,
+      hardFail: true,
+    };
+
     const md = renderMarkdown(
       baseReport({
-        blocked: true,
+        verdict: "block",
+        prScore: 100,
+        flaggedPackageCount: 1,
+        blockCount: 1,
+        hardFailCount: 1,
+        topRisks: [
+          {
+            ecosystem: "npm",
+            packageName: "pkg",
+            packageVersion: "1.0.0",
+            direct: true,
+            score: 100,
+            verdict: "block",
+            hardFail: true,
+            findings: [finding],
+          },
+        ],
+        packages: [
+          {
+            ecosystem: "npm",
+            packageName: "pkg",
+            packageVersion: "1.0.0",
+            direct: true,
+            score: 100,
+            verdict: "block",
+            hardFail: true,
+            findings: [finding],
+          },
+        ],
         workspaces: [
           {
             workspace: "root",
             ecosystem: "npm",
             parseOutcome: "fully-supported",
             changes: [],
-            findings: [
-              {
-                code: "NEW_DEPENDENCY_SOURCE",
-                title: "pkg@1.0.0 resolved to a new registry/URL",
-                severity: "critical",
-                confidence: 1,
-                evidence: [
-                  {
-                    kind: "registry",
-                    registryUrl: "https://evil-mirror.example/pkg/-/pkg-1.0.0.tgz",
-                    oldValue: "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz",
-                    newValue: "https://evil-mirror.example/pkg/-/pkg-1.0.0.tgz",
-                    remediationHint: "Confirm the new resolved source is expected and trusted.",
-                  },
-                ],
-                ecosystem: "npm",
-                packageName: "pkg",
-                packageVersion: "1.0.0",
-                direct: true,
-                escalated: false,
-                hardFail: true,
-              },
-            ],
+            findings: [finding],
           },
         ],
       }),
@@ -193,6 +287,25 @@ describe("renderMarkdown", () => {
   });
 
   it("renders advisory-kind evidence with advisory id and reason", () => {
+    const finding = {
+      code: "CVE_VULNERABILITY",
+      title: "GHSA-xxxx-yyyy: prototype pollution affects pkg@1.0.0",
+      severity: "high" as const,
+      confidence: 0.95,
+      evidence: [
+        {
+          kind: "advisory" as const,
+          advisoryId: "GHSA-xxxx-yyyy",
+          confidenceReason: "prototype pollution in merge()",
+        },
+      ],
+      ecosystem: "npm" as const,
+      packageName: "pkg",
+      packageVersion: "1.0.0",
+      direct: true,
+      escalated: false,
+    };
+
     const md = renderMarkdown(
       baseReport({
         workspaces: [
@@ -201,28 +314,22 @@ describe("renderMarkdown", () => {
             ecosystem: "npm",
             parseOutcome: "fully-supported",
             changes: [],
-            findings: [
-              {
-                code: "CVE_VULNERABILITY",
-                title: "GHSA-xxxx-yyyy: prototype pollution affects pkg@1.0.0",
-                severity: "high",
-                confidence: 0.95,
-                evidence: [
-                  {
-                    kind: "advisory",
-                    advisoryId: "GHSA-xxxx-yyyy",
-                    confidenceReason: "prototype pollution in merge()",
-                  },
-                ],
-                ecosystem: "npm",
-                packageName: "pkg",
-                packageVersion: "1.0.0",
-                direct: true,
-                escalated: false,
-              },
-            ],
+            findings: [finding],
           },
         ],
+        packages: [
+          {
+            ecosystem: "npm",
+            packageName: "pkg",
+            packageVersion: "1.0.0",
+            direct: true,
+            score: 45,
+            verdict: "review",
+            hardFail: false,
+            findings: [finding],
+          },
+        ],
+        topRisks: [],
       }),
     );
     expect(md).toMatch(/CVE_VULNERABILITY/);
