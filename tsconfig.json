@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/analyzer-npm" },
+    { "path": "packages/scoring" },
     { "path": "packages/cli" },
     { "path": "packages/action" }
   ]
