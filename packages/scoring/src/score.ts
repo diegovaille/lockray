@@ -7,6 +7,11 @@ export interface ScoreInput {
   head: string;
   findings: readonly Finding[];
   workspaces: readonly CliWorkspaceReport[];
+  /**
+   * Total packages that changed in the lockfile diff. Used as the
+   * riskDensity denominator in the resulting PrReport. May exceed
+   * findings.length because a changed package can produce zero findings.
+   */
   totalChangedPackages: number;
 }
 
@@ -34,6 +39,7 @@ export function score(input: ScoreInput): PrReport {
 
   const packages: PackageReport[] = [];
   for (const bucket of groups.values()) {
+    // bucket was created on first push so is non-empty; no null guard needed.
     const first = bucket[0]!;
     packages.push(
       buildPackageReport(

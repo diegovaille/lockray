@@ -13,3 +13,4 @@ export {
   type Thresholds,
   type CompoundBonus,
 } from "./weights.js";
+export type { Verdict } from "@lockray/types";

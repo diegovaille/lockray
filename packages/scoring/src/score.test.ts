@@ -72,4 +72,21 @@ describe("score (end-to-end)", () => {
     expect(r.hardFailCount).toBe(1);
     expect(r.topRisks[0]?.packageName).toBe("danger");
   });
+
+  it("merges two findings for the same (ecosystem, packageName, packageVersion) into one PackageReport", () => {
+    const r = score({
+      base: "a",
+      head: "b",
+      findings: [
+        fi({ packageName: "a", code: "NEW_NETWORK_CALL", severity: "high" }),
+        fi({ packageName: "a", code: "MAINTAINER_CHANGED", severity: "medium" }),
+      ],
+      workspaces: NO_WORKSPACES,
+      totalChangedPackages: 1,
+    });
+    expect(r.packages).toHaveLength(1);
+    expect(r.packages[0]?.packageName).toBe("a");
+    // Both findings contribute (30 + 12 baseline), score strictly greater than either alone.
+    expect(r.packages[0]?.score).toBeGreaterThan(30);
+  });
 });
