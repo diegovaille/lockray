@@ -1,0 +1,64 @@
+name: LockRay
+
+on:
+  pull_request:
+  workflow_run:
+    workflows: ["LockRay"]
+    types: ["completed"]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install workspace
+        run: npm ci
+      - name: Build CLI
+        run: npm run build
+      - name: Link CLI globally so npx resolves locally
+        run: npm link --workspace @lockray/cli
+      - name: LockRay analyze
+        uses: ./packages/action
+        with:
+          mode: analyze
+          workdir: ${{ github.workspace }}
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          fail-on-risk: "true"
+
+  report:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      checks: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install workspace
+        run: npm ci
+      - name: LockRay report
+        uses: ./packages/action
+        with:
+          mode: report
+          workflow-run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
