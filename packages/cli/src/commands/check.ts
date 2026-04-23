@@ -95,6 +95,10 @@ export function buildCheckCommand(): Command {
               ...prReport,
               // v0.2 backwards-compat views — drop in v1.0 after
               // downstream consumers migrate to verdict + packages.
+              // NOTE: compat fields stay AFTER the spread; if a future
+              // PrReport schema adds a field named changes/findings/
+              // blocked it would be silently shadowed by the compat
+              // value here. Rename the compat key if that ever happens.
               changes: allChanges,
               findings: allFindings,
               blocked,
@@ -139,7 +143,9 @@ function renderPretty(
       `Verdict: ⚠ incomplete — ${unanalyzedCount} workspace(s) not analyzed; see notes below\n`,
     );
   } else {
-    out.write(`Verdict: ✅ no high-confidence risk signals found (score 0/100)\n`);
+    out.write(
+      `Verdict: ✅ no high-confidence risk signals found (score ${prReport.prScore}/100)\n`,
+    );
   }
   out.write(
     `${prReport.flaggedPackageCount} flagged · ${prReport.blockCount} block · ${prReport.reviewCount} review · risk density ${prReport.riskDensity}\n\n`,
