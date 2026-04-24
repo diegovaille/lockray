@@ -113,6 +113,8 @@ describe("renderMarkdown", () => {
     expect(md).toMatch(/sha512-OLD/);
     expect(md).toMatch(/sha512-NEW/);
     expect(md).toMatch(/Investigate whether the package was re-published/);
+    expect(md).toMatch(/### Top risks/);
+    expect(md).toMatch(/left-pad@1\.3\.0.*score 100\/100.*verdict `block`.*\(hard-fail\)/s);
   });
 
   it("renders the review verdict when there are non-hard-fail findings", () => {

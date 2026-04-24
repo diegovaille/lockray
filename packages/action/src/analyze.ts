@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 import type { ActionInputs, AnalyzeResult } from "./types.js";
 
 export type ExecFn = (
@@ -80,9 +80,9 @@ export async function runAnalyzeJob(
     },
   });
 
-  let report: CliReport;
+  let report: PrReport;
   try {
-    report = JSON.parse(stdout) as CliReport;
+    report = JSON.parse(stdout) as PrReport;
   } catch (err) {
     throw new Error(
       `could not parse lockray CLI JSON (exit ${exitCode}): ${(err as Error).message}\nstdout:\n${stdout}\nstderr:\n${stderr}`,

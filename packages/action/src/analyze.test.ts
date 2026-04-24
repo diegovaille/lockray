@@ -1,16 +1,22 @@
 import { describe, it, expect, vi } from "vitest";
 import type { ActionInputs } from "./types.js";
 import { runAnalyzeJob } from "./analyze.js";
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 
-function baseReport(): CliReport {
+function baseReport(): PrReport {
   return {
     base: "aaa",
     head: "bbb",
+    prScore: 0,
+    verdict: "safe",
+    flaggedPackageCount: 0,
+    reviewCount: 0,
+    blockCount: 0,
+    hardFailCount: 0,
+    riskDensity: 0,
+    topRisks: [],
+    packages: [],
     workspaces: [],
-    changes: [],
-    findings: [],
-    blocked: false,
   };
 }
 
@@ -49,7 +55,7 @@ describe("runAnalyzeJob", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.report.blocked).toBe(false);
+    expect(result.report.verdict).toBe("safe");
     expect(fakeExec).toHaveBeenCalledWith(
       expect.stringContaining("lockray"),
       expect.arrayContaining(["check", "--format", "json", "--base", "origin/main", "--head", "HEAD"]),
@@ -60,7 +66,7 @@ describe("runAnalyzeJob", () => {
   });
 
   it("propagates a non-zero exit code as blocked without throwing", async () => {
-    const blockedReport: CliReport = { ...baseReport(), blocked: true };
+    const blockedReport: PrReport = { ...baseReport(), verdict: "block", prScore: 100, blockCount: 1, flaggedPackageCount: 1 };
     const fakeExec = vi.fn(async (_cmd: string, _args: string[], opts?: { listeners?: { stdout?: (buf: Buffer) => void } }) => {
       opts?.listeners?.stdout?.(Buffer.from(JSON.stringify(blockedReport), "utf8"));
       return 1;
@@ -76,7 +82,7 @@ describe("runAnalyzeJob", () => {
     });
 
     expect(result.exitCode).toBe(1);
-    expect(result.report.blocked).toBe(true);
+    expect(result.report.verdict).toBe("block");
   });
 
   it("throws a descriptive error when the CLI stdout is not valid JSON", async () => {

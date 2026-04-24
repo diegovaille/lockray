@@ -1,10 +1,4 @@
-import type {
-  DependencyChange,
-  Evidence,
-  Finding,
-  PackageReport,
-  PrReport,
-} from "@lockray/types";
+import type { DependencyChange, Finding, PrReport } from "@lockray/types";
 
 const DEFAULT_MAX_FINDINGS = 25;
 

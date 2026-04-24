@@ -1,7 +1,7 @@
 /**
- * Action-local types. The shared `CliReport` shape lives in @lockray/types.
+ * Action-local types. The shared `PrReport` shape lives in @lockray/types.
  */
-import type { CliReport } from "@lockray/types";
+import type { PrReport } from "@lockray/types";
 
 export interface ActionInputs {
   /** "analyze" runs the CLI + uploads artifact. "report" downloads and posts comment + status. */
@@ -25,7 +25,7 @@ export interface ActionInputs {
 }
 
 export interface AnalyzeResult {
-  report: CliReport;
+  report: PrReport;
   exitCode: number;
   stdout: string;
   stderr: string;

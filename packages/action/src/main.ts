@@ -133,11 +133,18 @@ async function runAnalyzeMode(inputs: ActionInputs): Promise<number> {
     headSha,
   });
 
-  core.setOutput("blocked", String(report.blocked));
-  core.setOutput("finding-count", String(report.findings.length));
+  const blocked = report.verdict === "block";
+  const findingCount = report.workspaces.reduce(
+    (n, w) => n + w.findings.length,
+    0,
+  );
+  core.setOutput("blocked", String(blocked));
+  core.setOutput("finding-count", String(findingCount));
 
-  if (report.blocked && inputs.failOnRisk) {
-    core.setFailed(`LockRay BLOCKED: ${report.findings.length} finding(s); see uploaded report artifact.`);
+  if (blocked && inputs.failOnRisk) {
+    core.setFailed(
+      `LockRay BLOCKED: ${findingCount} finding(s); see uploaded report artifact.`,
+    );
     return 1;
   }
   if (exitCode !== 0 && inputs.failOnRisk) {
