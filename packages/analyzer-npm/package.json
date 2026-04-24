@@ -11,11 +11,15 @@
     "clean": "tsc -b --clean"
   },
   "dependencies": {
+    "@babel/parser": "^7.25.0",
+    "@babel/traverse": "^7.25.0",
+    "@babel/types": "^7.25.0",
     "@lockray/types": "*",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/babel__traverse": "^7.20.0",
     "@types/js-yaml": "^4.0.9"
   }
 }

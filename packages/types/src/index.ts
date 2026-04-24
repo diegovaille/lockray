@@ -34,6 +34,10 @@ export interface Finding {
   direct: boolean;
   escalated: boolean;
   hardFail?: boolean;
+  /** M4.2+: which runtime context the AST detected the capability in.
+   *  Undefined for non-AST findings and findings that predate M4.2;
+   *  preserves legacy compound-bonus semantics for those. */
+  contextBucket?: "install" | "runtime";
 }
 
 export interface DependencyChange {
@@ -92,6 +96,10 @@ export interface FetchedPackage {
   version: string;
   integrity: string | null;
   packageJson: Record<string, unknown>;
+  /** M4.2+: POSIX-relative tarball-root paths → UTF-8 file contents.
+   *  Populated by fetchers that can supply source-level data.
+   *  Legacy fetchers may omit; AST analysis no-ops when absent. */
+  sourceFiles?: ReadonlyMap<string, string>;
 }
 
 /**
