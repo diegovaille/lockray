@@ -68,7 +68,7 @@
       "scenario": "new postinstall with content the M2 pattern matcher misses (emits CRITICAL but not hard-fail)",
       "before": { "version": "1.0.0", "pkg": "mal-4-before" },
       "after": { "version": "1.0.1", "pkg": "mal-4-after" },
-      "expect": { "blocked": false, "findingCodes": ["NEW_POSTINSTALL_SCRIPT"] }
+      "expect": { "blocked": true, "findingCodes": ["NEW_POSTINSTALL_SCRIPT"] }
     },
     {
       "dir": "malicious/integrity-tamper",

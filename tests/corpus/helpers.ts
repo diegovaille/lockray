@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DependencyChange, FetchedPackage } from "@lockray/types";
+import { score } from "@lockray/scoring";
+import type { CliWorkspaceReport, DependencyChange, FetchedPackage, Finding, PrReport } from "@lockray/types";
 
 export interface CorpusFixture {
   dir: string;
@@ -64,4 +65,30 @@ export function buildChange(fixture: CorpusFixture): DependencyChange {
   }
 
   return change;
+}
+
+/**
+ * Run the full @lockray/scoring pipeline against a fixture's findings.
+ * Synthetic workspaces array so the harness gets a realistic PrReport
+ * with verdict + prScore + counts.
+ */
+export function scoreFixtureFindings(findings: Finding[]): PrReport {
+  // Synthetic workspace carrying the findings so PrReport.workspaces
+  // matches the shape the CLI emits.
+  const workspaces: CliWorkspaceReport[] = [
+    {
+      workspace: "root",
+      ecosystem: "npm",
+      parseOutcome: "fully-supported",
+      changes: [],
+      findings,
+    },
+  ];
+  return score({
+    base: "before",
+    head: "after",
+    findings,
+    workspaces,
+    totalChangedPackages: 1,
+  });
 }
