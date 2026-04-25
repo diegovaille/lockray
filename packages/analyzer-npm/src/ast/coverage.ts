@@ -297,12 +297,6 @@ export function planCoverage(
       plan.skip.set(path, "non-runtime-path");
       continue;
     }
-    // Root-level files (no directory component) are not considered runtime
-    // sources unless explicitly forced via a package.json field.
-    if (!path.includes("/")) {
-      plan.skip.set(path, "non-runtime-path");
-      continue;
-    }
     plan.parse.set(path, { bucket: "runtime", forced: false });
   }
 

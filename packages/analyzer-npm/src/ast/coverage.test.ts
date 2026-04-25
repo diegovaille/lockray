@@ -128,8 +128,8 @@ describe("planCoverage", () => {
       }),
       files({ "x.js": "1" }),
     );
-    // None of those turn into forced-include.
-    expect(plan.parse.has("x.js")).toBe(false);
+    // None of those turn into forced-include (forced: false confirms it).
+    expect(plan.parse.get("x.js")).toEqual({ bucket: "runtime", forced: false });
     expect(plan.unresolvedScriptTargets.length).toBe(3);
     const fields = plan.unresolvedScriptTargets.map((u) => u.field).sort();
     expect(fields).toEqual(["scripts.postinstall", "scripts.preinstall", "scripts.prepare"]);
