@@ -100,13 +100,18 @@ describe("planCoverage", () => {
   it("forced-include too-large: counted in skip with 'too-large' reason", () => {
     const big = "x".repeat(500_001);
     const plan = planCoverage(
-      pj({ scripts: { postinstall: "./scripts/big.js" } }),
+      pj({
+        scripts: {
+          preinstall: "./scripts/ok.js",
+          postinstall: "./scripts/big.js",
+        },
+      }),
       files({ "scripts/big.js": big, "scripts/ok.js": "1" }),
     );
     expect(plan.skip.get("scripts/big.js")).toBe("too-large");
-    // Another forced file of normal size still parses.
-    // (Not in this fixture but proves the "does not suppress rest of set" rule
-    // — add an explicit small forced-include sibling:)
+    // Sibling forced-include of normal size still parses — proves the
+    // too-large skip on one file does not suppress the rest of the set.
+    expect(plan.parse.get("scripts/ok.js")).toEqual({ bucket: "install", forced: true });
   });
 
   it("bucket union: file referenced as both main and postinstall ends up install", () => {
