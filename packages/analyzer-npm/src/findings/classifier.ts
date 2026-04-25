@@ -14,6 +14,10 @@ import {
   type OsvVulnerability,
 } from "../cve/types.js";
 import { FindingCode, type FindingCodeValue } from "./codes.js";
+import { planCoverage } from "../ast/coverage.js";
+import { collectCapabilities } from "../ast/file-capabilities.js";
+import { diffCapabilities } from "../ast/diff.js";
+import { capabilityDiffToFindings } from "../ast/findings.js";
 
 const OSV_SEVERITY_TO_LOCKRAY: Record<OsvSeverityLevel, Severity> = {
   critical: "critical",
@@ -199,6 +203,22 @@ export function classify(
       ],
       false,
     );
+  }
+
+  // AST capability-diff branch (M4.2). No-op when either side lacks
+  // sourceFiles — legacy fetchers and older fixtures keep working.
+  if (
+    before?.sourceFiles &&
+    after?.sourceFiles &&
+    before.packageJson &&
+    after.packageJson
+  ) {
+    const beforePlan = planCoverage(before.packageJson, before.sourceFiles);
+    const afterPlan = planCoverage(after.packageJson, after.sourceFiles);
+    const beforeCaps = collectCapabilities(before.sourceFiles, beforePlan);
+    const afterCaps = collectCapabilities(after.sourceFiles, afterPlan);
+    const diffs = diffCapabilities(beforeCaps, afterCaps);
+    findings.push(...capabilityDiffToFindings(diffs, change));
   }
 
   return findings;

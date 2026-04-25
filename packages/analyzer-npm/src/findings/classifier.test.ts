@@ -154,4 +154,102 @@ describe("classify", () => {
     expect(findings.some((f) => f.code === "NEW_POSTINSTALL_SCRIPT")).toBe(false);
     expect(findings.some((f) => f.code === "MALICIOUS_INSTALL_SCRIPT")).toBe(false);
   });
+
+  describe("M4.2 AST capability findings", () => {
+    function pkg(sourceFiles: Map<string, string>, packageJson: Record<string, unknown>) {
+      return {
+        ecosystem: "npm" as const,
+        name: "demo",
+        version: "1.0.0",
+        integrity: null,
+        packageJson,
+        sourceFiles,
+      };
+    }
+
+    function dep(): DependencyChange {
+      return {
+        ecosystem: "npm",
+        name: "demo",
+        fromVersion: "1.0.0",
+        toVersion: "1.0.1",
+        direct: true,
+        manifestPath: "package.json",
+        workspaceName: "root",
+        integrityChanged: false,
+        sourceChanged: false,
+      };
+    }
+
+    it("emits NEW_NETWORK_CALL finding with contextBucket when after adds fetch() not in before", () => {
+      const before = pkg(new Map([["lib/a.js", "console.log(1);"]]), { main: "./lib/a.js" });
+      const after = pkg(new Map([["lib/a.js", `fetch("https://x");`]]), { main: "./lib/a.js" });
+      const findings = classify(dep(), before, after, []);
+      const net = findings.find((f) => f.code === "NEW_NETWORK_CALL");
+      expect(net).toBeDefined();
+      expect(net?.contextBucket).toBe("runtime");
+    });
+
+    it("does not emit finding when both before and after contain the same http.request (refactor guard)", () => {
+      const src = `require("http").request({host:"a"})`;
+      const before = pkg(new Map([["lib/a.js", src]]), { main: "./lib/a.js" });
+      const after = pkg(new Map([["lib/b.js", src]]), { main: "./lib/b.js" });
+      const findings = classify(dep(), before, after, []);
+      expect(findings.some((f) => f.code === "NEW_NETWORK_CALL")).toBe(false);
+    });
+
+    it("emits two findings when child_process.exec is newly introduced in both install and runtime contexts", () => {
+      const src = `require("child_process").exec("x")`;
+      const before = pkg(new Map([["lib/a.js", "1"]]), {
+        main: "./lib/a.js",
+        scripts: { postinstall: "./scripts/p.js" },
+      });
+      before.sourceFiles = new Map([
+        ["lib/a.js", "1"],
+        ["scripts/p.js", "console.log('pre');"],
+      ]);
+      const after = pkg(new Map([["lib/a.js", src], ["scripts/p.js", src]]), {
+        main: "./lib/a.js",
+        scripts: { postinstall: "./scripts/p.js" },
+      });
+      const findings = classify(dep(), before, after, []);
+      const cp = findings.filter((f) => f.code === "NEW_CHILD_PROCESS");
+      expect(cp).toHaveLength(2);
+      const buckets = cp.map((f) => f.contextBucket).sort();
+      expect(buckets).toEqual(["install", "runtime"]);
+    });
+
+    it("sourceFiles absent → AST branch no-ops, no crash, no findings", () => {
+      // Note: sourceFiles undefined means the AST branch is skipped entirely.
+      const before = {
+        ecosystem: "npm" as const,
+        name: "demo",
+        version: "1.0.0",
+        integrity: null,
+        packageJson: { main: "./a.js" },
+      };
+      const after = {
+        ecosystem: "npm" as const,
+        name: "demo",
+        version: "1.0.1",
+        integrity: null,
+        packageJson: { main: "./a.js" },
+      };
+      const findings = classify(dep(), before, after, []);
+      expect(findings.some((f) => f.code.startsWith("NEW_"))).toBe(false);
+    });
+
+    it("docs/example.js containing fetch() does not surface a finding when runtime/install files are clean", () => {
+      const before = pkg(new Map([["lib/a.js", "console.log(1);"]]), { main: "./lib/a.js" });
+      const after = pkg(
+        new Map([
+          ["lib/a.js", "console.log(1);"],
+          ["docs/example.js", `fetch("https://x");`],
+        ]),
+        { main: "./lib/a.js" },
+      );
+      const findings = classify(dep(), before, after, []);
+      expect(findings.some((f) => f.code === "NEW_NETWORK_CALL")).toBe(false);
+    });
+  });
 });
