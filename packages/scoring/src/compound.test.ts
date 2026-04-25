@@ -40,4 +40,24 @@ describe("compoundBonusFor", () => {
       ]),
     ).toBe(60);
   });
+
+  it("does NOT apply bucket-local compound when required codes land in different contextBuckets", () => {
+    const findings = [
+      fWithCode("NEW_NETWORK_CALL"),
+      fWithCode("NEW_CREDENTIAL_ACCESS"),
+    ];
+    // Stamp different buckets on each.
+    (findings[0] as { contextBucket?: "install" | "runtime" }).contextBucket = "install";
+    (findings[1] as { contextBucket?: "install" | "runtime" }).contextBucket = "runtime";
+    expect(compoundBonusFor(findings)).toBe(0);
+  });
+
+  it("applies legacy (undefined contextBucket) compound bonus for pre-M4.2 findings", () => {
+    const findings = [
+      fWithCode("NEW_NETWORK_CALL"),
+      fWithCode("NEW_CREDENTIAL_ACCESS"),
+    ];
+    // No contextBucket on either — legacy path.
+    expect(compoundBonusFor(findings)).toBe(20);
+  });
 });
