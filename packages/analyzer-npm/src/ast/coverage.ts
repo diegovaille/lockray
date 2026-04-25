@@ -284,13 +284,13 @@ export function planCoverage(
       plan.skip.set(path, "unsupported-extension");
       continue;
     }
-    if (size > MAX_FILE_BYTES) {
-      plan.skip.set(path, "too-large");
-      continue;
-    }
     const byPattern = matchedSkipPattern(path);
     if (byPattern) {
       plan.skip.set(path, byPattern.kind);
+      continue;
+    }
+    if (size > MAX_FILE_BYTES) {
+      plan.skip.set(path, "too-large");
       continue;
     }
     if (isUnderSkipDir(path)) {
