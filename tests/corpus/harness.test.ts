@@ -16,8 +16,8 @@ const manifest = loadCorpusManifest();
 describe("corpus harness", () => {
   for (const fixture of manifest.fixtures) {
     it(`${fixture.dir}: ${fixture.scenario}`, async () => {
-      const before = loadFixturePackage(fixture, "before");
-      const after = loadFixturePackage(fixture, "after");
+      const before = await loadFixturePackage(fixture, "before");
+      const after = await loadFixturePackage(fixture, "after");
       const fetcher = createStubFetcher([before, after]);
       const analyzer = new NpmAnalyzer({
         gitShow: stubGitShow,
@@ -25,7 +25,7 @@ describe("corpus harness", () => {
         osv: emptyOsv,
       });
 
-      const change = buildChange(fixture);
+      const change = buildChange(fixture, after.name);
       const findings = await analyzer.analyze(change, "hybrid");
       const prReport = scoreFixtureFindings(findings);
 

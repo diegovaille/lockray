@@ -1,0 +1,5 @@
+{
+  "name": "ast-exfil-demo",
+  "version": "1.0.0",
+  "scripts": { "postinstall": "./scripts/postinstall.js" }
+}

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import { score } from "@lockray/scoring";
 import type { CliWorkspaceReport, DependencyChange, FetchedPackage, Finding, PrReport } from "@lockray/types";
 
@@ -23,24 +24,59 @@ export function loadCorpusManifest(): CorpusManifest {
   return JSON.parse(raw) as CorpusManifest;
 }
 
-export function loadFixturePackage(
+const ALLOWED_SOURCE_EXTENSIONS = [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"];
+
+async function listSourceFiles(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // dir may not exist for some fixtures
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full);
+      } else if (e.isFile()) {
+        if (e.name === "package.json") continue; // handled separately
+        const ext = ALLOWED_SOURCE_EXTENSIONS.find((x) => e.name.endsWith(x));
+        if (!ext) continue;
+        const s = await stat(full);
+        if (s.size > 500_000) continue;
+        const content = await readFile(full, "utf8");
+        const rel = relative(root, full).split(sep).join("/");
+        out.set(rel, content);
+      }
+    }
+  }
+
+  await walk(root);
+  return out;
+}
+
+export async function loadFixturePackage(
   fixture: CorpusFixture,
   which: "before" | "after",
-): FetchedPackage {
+): Promise<FetchedPackage> {
   const side = fixture[which];
-  const pkgPath = join(CORPUS_ROOT, fixture.dir, side.pkg, "package.json");
+  const pkgRoot = join(CORPUS_ROOT, fixture.dir, side.pkg);
+  const pkgPath = join(pkgRoot, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
+  const sourceFiles = await listSourceFiles(pkgRoot);
   return {
     ecosystem: "npm",
     name: String(pkg.name ?? ""),
     version: side.version,
     integrity: `sha512-${which}-${fixture.dir}`,
     packageJson: pkg,
-  };
+    sourceFiles,
+  } satisfies FetchedPackage;
 }
 
-export function buildChange(fixture: CorpusFixture): DependencyChange {
-  const name = String(loadFixturePackage(fixture, "after").name);
+export function buildChange(fixture: CorpusFixture, name: string): DependencyChange {
   const change: DependencyChange = {
     ecosystem: "npm",
     name,

@@ -85,6 +85,27 @@
       "after": { "version": "1.0.0", "pkg": "redirect-after" },
       "synthetic": { "sourceChanged": true },
       "expect": { "blocked": true, "findingCodes": ["NEW_DEPENDENCY_SOURCE"] }
+    },
+    {
+      "dir": "malicious/ast-network-in-postinstall",
+      "scenario": "postinstall newly introduces fetch() — solo NEW_NETWORK_CALL@install on direct dep scores 24 (HIGH 30 × 0.80 confidence), below 30 review threshold; verdict=safe demonstrates the AST pipeline detects the call without producing solo-finding noise. The exfil-postinstall fixture covers the compound case",
+      "before": { "version": "1.0.0", "pkg": "before" },
+      "after": { "version": "1.0.1", "pkg": "after" },
+      "expect": { "blocked": false, "findingCodes": [] }
+    },
+    {
+      "dir": "malicious/ast-exfil-in-postinstall",
+      "scenario": "postinstall introduces fetch + https.request + process.env read → compound +20 fires bucket-locally",
+      "before": { "version": "1.0.0", "pkg": "before" },
+      "after": { "version": "1.0.1", "pkg": "after" },
+      "expect": { "blocked": true, "findingCodes": ["NEW_NETWORK_CALL", "NEW_CREDENTIAL_ACCESS"] }
+    },
+    {
+      "dir": "clean/ast-refactor-safe",
+      "scenario": "renames the file that contains http.request — package-level diff says no new capability",
+      "before": { "version": "1.0.0", "pkg": "before" },
+      "after": { "version": "1.0.1", "pkg": "after" },
+      "expect": { "blocked": false, "findingCodes": [] }
     }
   ]
 }
