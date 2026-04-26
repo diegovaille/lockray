@@ -41,7 +41,9 @@ describe("corpus harness", () => {
       const blocked = prReport.verdict === "block";
       expect(blocked).toBe(fixture.expect.blocked);
 
-      // Finding codes still as before.
+      // Finding codes still as before. NOTE: containment-only — `findingCodes: []`
+      // does NOT mean "no findings emitted"; it means "we don't assert any specific
+      // code." The verdict above is the exhaustive assertion.
       const codes = findings.map((f) => f.code).sort();
       for (const expected of fixture.expect.findingCodes) {
         expect(codes).toContain(expected);

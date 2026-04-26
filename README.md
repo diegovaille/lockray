@@ -33,7 +33,7 @@ The JSON shape is the `PrReport` type exported from `@lockray/types` (score, ver
 
 ## GitHub Action
 
-v0.3 ships a GitHub Action that wraps the CLI using a two-job fork-safe design (spec §18). `analyze` runs unprivileged on `pull_request`; `report` runs privileged on `workflow_run` and posts a PR comment + sets the `lockray/risk` status check.
+v0.4 ships a GitHub Action that wraps the CLI using a two-job fork-safe design (spec §18). `analyze` runs unprivileged on `pull_request`; `report` runs privileged on `workflow_run` and posts a PR comment + sets the `lockray/risk` status check.
 
 ```yaml
 # .github/workflows/lockray.yml
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # v0.3 limitation: the Action expects `lockray` on PATH. Until the
+      # v0.4 limitation: the Action expects `lockray` on PATH. Until the
       # bundled-CLI variant lands in M4.3, consumers install @lockray/cli
       # explicitly (or link from a workspace):
       - run: npm install -g @lockray/cli
